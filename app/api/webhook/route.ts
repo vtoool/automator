@@ -27,7 +27,7 @@ export async function POST(req: Request) {
             .select('role, message_text')
             .eq('sender_id', senderId)
             .order('created_at', { ascending: false })
-            .limit(6);
+            .limit(4);
 
           // 2. FORMAT HISTORY FOR GROQ
           const chatContext = history?.reverse().map(m => ({
@@ -60,12 +60,12 @@ export async function POST(req: Request) {
           // 4. GENERATE RESPONSE WITH CONTEXT
           const completion = await groq.chat.completions.create({
             messages: [
-              { role: "system", content: config.system_prompt + " CONSTRAINT: Use maximum 2 sentences. Speak naturally like a human on Messenger. No formal introductions." },
+              { role: "system", content: config.system_prompt },
               ...chatContext,
               { role: "user", content: userMessage }
             ],
             model: "llama-3.3-70b-versatile",
-            temperature: 0.7,
+            temperature: 0.6,
           });
 
           const aiReply = completion.choices[0]?.message?.content || "Checking on that for you...";
