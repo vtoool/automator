@@ -41,6 +41,9 @@ export async function POST(req: Request) {
           }
 
           if (!config.is_active) {
+            console.error(`❌ Bot is not active for Page ID: ${pageId}`);
+            continue;
+          }
 
           const completion = await groq.chat.completions.create({
             messages: [
