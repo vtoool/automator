@@ -28,7 +28,7 @@ export async function POST(req: Request) {
             .from('bot_configs')
             .select('*')
             .eq('page_id', pageId)
-            .single();
+            .maybeSingle();
 
           if (error || !config || !config.is_active) {
             console.error(`❌ DATABASE REJECTED ID: ${pageId}. Error:`, error?.message);
