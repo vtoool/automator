@@ -21,9 +21,21 @@ export async function POST(req: Request) {
           const senderId = event.sender.id;
           const userMessage = event.message.text;
 
-          // DEBUG LOG - NOW INSIDE THE LOOP
-          console.log(`🔍 DEBUG: Looking for config with ID: [${pageId}] (Length: ${pageId.length})`);
+          // 1. FETCH CHAT HISTORY (Memory)
+          const { data: history } = await supabase
+            .from('messages')
+            .select('role, message_text')
+            .eq('sender_id', senderId)
+            .order('created_at', { ascending: false })
+            .limit(6);
 
+          // 2. FORMAT HISTORY FOR GROQ
+          const chatContext = history?.reverse().map(m => ({
+            role: m.role as "user" | "assistant",
+            content: m.message_text
+          })) || [];
+
+          // 3. GET THE BRAIN CONFIG
           const { data: config, error } = await supabase
             .from('bot_configs')
             .select('*')
@@ -45,19 +57,22 @@ export async function POST(req: Request) {
             continue;
           }
 
+          // 4. GENERATE RESPONSE WITH CONTEXT
           const completion = await groq.chat.completions.create({
             messages: [
-              { role: "system", content: config.system_prompt },
+              { role: "system", content: config.system_prompt + " CONSTRAINT: Use maximum 2 sentences. Speak naturally like a human on Messenger. No formal introductions." },
+              ...chatContext,
               { role: "user", content: userMessage }
             ],
             model: "llama-3.3-70b-versatile",
+            temperature: 0.7,
           });
 
-          const aiReply = completion.choices[0]?.message?.content || "I am currently offline.";
+          const aiReply = completion.choices[0]?.message?.content || "Checking on that for you...";
 
+          // 5. SEND & SAVE
           await sendMetaMessage(senderId, aiReply, config.access_token);
 
-          // Save history
           await supabase.from('messages').insert({
             sender_id: senderId,
             role: 'assistant',
