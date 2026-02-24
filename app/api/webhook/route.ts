@@ -11,14 +11,18 @@ export async function POST(req: Request) {
 
     if (body.object === 'page') {
       for (const entry of body.entry) {
-        const pageId = entry.id;
+        // Facebook IDs can sometimes come in as numbers or strings with spaces
+        const rawPageId = entry.id?.toString() || "";
+        const pageId = rawPageId.trim(); // FORCE CLEAN ID
+        
         const event = entry.messaging ? entry.messaging[0] : null;
 
         if (event && event.message && !event.message.is_echo) {
           const senderId = event.sender.id;
           const userMessage = event.message.text;
 
-          console.log(`📩 Message for Page ${pageId} from ${senderId}: ${userMessage}`);
+          // DEBUG LOG - NOW INSIDE THE LOOP
+          console.log(`🔍 DEBUG: Looking for config with ID: [${pageId}] (Length: ${pageId.length})`);
 
           const { data: config, error } = await supabase
             .from('bot_configs')
@@ -27,7 +31,7 @@ export async function POST(req: Request) {
             .single();
 
           if (error || !config || !config.is_active) {
-            console.error(`❌ No config found for Page ID: ${pageId}`);
+            console.error(`❌ DATABASE REJECTED ID: ${pageId}. Error:`, error?.message);
             continue;
           }
 
@@ -43,6 +47,7 @@ export async function POST(req: Request) {
 
           await sendMetaMessage(senderId, aiReply, config.access_token);
 
+          // Save history
           await supabase.from('messages').insert({
             sender_id: senderId,
             role: 'assistant',
@@ -55,7 +60,7 @@ export async function POST(req: Request) {
     }
     return new NextResponse('Not Found', { status: 404 });
   } catch (error) {
-    console.error("Server Error:", error);
+    console.error("🔥 Server Error:", error);
     return new NextResponse('Internal Error', { status: 500 });
   }
 }
@@ -74,7 +79,6 @@ export async function GET(req: Request) {
 
 async function sendMetaMessage(recipientId: string, text: string, pageToken: string) {
   const url = `https://graph.facebook.com/v18.0/me/messages?access_token=${pageToken}`;
-  
   const response = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -86,7 +90,7 @@ async function sendMetaMessage(recipientId: string, text: string, pageToken: str
 
   const data = await response.json();
   if (!response.ok) {
-    console.error(`❌ Failed to send as Page. Error:`, data);
+    console.error(`❌ Meta API Error:`, data);
   } else {
     console.log(`✅ Sent reply.`);
   }
