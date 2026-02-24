@@ -30,10 +30,17 @@ export async function POST(req: Request) {
             .eq('page_id', pageId)
             .maybeSingle();
 
-          if (error || !config || !config.is_active) {
-            console.error(`❌ DATABASE REJECTED ID: ${pageId}. Error:`, error?.message);
+          if (error) {
+            console.error("❌ Supabase Query Error:", error.message, error.details, error.hint);
             continue;
           }
+
+          if (!config) {
+            console.error(`❌ ID ${pageId} not found in bot_configs table.`);
+            continue;
+          }
+
+          if (!config.is_active) {
 
           const completion = await groq.chat.completions.create({
             messages: [
