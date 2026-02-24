@@ -30,6 +30,32 @@ export async function GET(request: NextRequest) {
   return new NextResponse('Forbidden', { status: 403 });
 }
 
+async function sendMetaMessage(recipientId: string, text: string) {
+  const token = process.env.META_PAGE_ACCESS_TOKEN;
+  if (!token) {
+    console.error('❌ FATAL: META_PAGE_ACCESS_TOKEN is missing!');
+    return;
+  }
+
+  const url = `https://graph.facebook.com/v18.0/me/messages?access_token=${token}`;
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      recipient: { id: recipientId },
+      message: { text: text },
+    }),
+  });
+
+  const data = await response.json();
+  if (!response.ok) {
+    console.error('❌ Facebook API Error:', JSON.stringify(data, null, 2));
+  } else {
+    console.log('✅ Message sent successfully:', data);
+  }
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body: FacebookWebhookBody = await request.json();
@@ -59,6 +85,7 @@ export async function POST(request: NextRequest) {
             .insert({
               sender_id: senderId,
               message_text: messageText,
+              role: 'user',
               platform: 'facebook',
               created_at: new Date().toISOString(),
             });
@@ -69,6 +96,8 @@ export async function POST(request: NextRequest) {
 
           const aiResponse = await generateAIResponse(messageText);
           console.log(`AI Response for ${senderId}: ${aiResponse}`);
+
+          await sendMetaMessage(senderId, aiResponse);
         }
       }
     }
