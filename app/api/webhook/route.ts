@@ -1,122 +1,110 @@
-import { NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
-import Groq from 'groq-sdk';
+import { createClient } from "@supabase/supabase-js";
+import { Groq } from "groq-sdk";
+import { NextResponse } from "next/server";
 
-const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!);
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+);
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
 export async function POST(req: Request) {
   try {
     const body = await req.json();
+    const entry = body.entry?.[0];
+    const messaging = entry?.messaging?.[0];
 
-    if (body.object === 'page') {
-      for (const entry of body.entry) {
-        // Facebook IDs can sometimes come in as numbers or strings with spaces
-        const rawPageId = entry.id?.toString() || "";
-        const pageId = rawPageId.trim(); // FORCE CLEAN ID
-        
-        const event = entry.messaging ? entry.messaging[0] : null;
+    if (!messaging) return NextResponse.json({ status: "ok" });
 
-        if (event && event.message && !event.message.is_echo) {
-          const senderId = event.sender.id;
-          const userMessage = event.message.text;
+    const senderId = messaging.sender.id;
+    const userMessage = messaging.message.text;
+    const pageId = entry.id;
 
-          // 1. FETCH CHAT HISTORY (Memory)
-          const { data: history } = await supabase
-            .from('messages')
-            .select('role, message_text')
-            .eq('sender_id', senderId)
-            .order('created_at', { ascending: false })
-            .limit(4);
+    console.log(`📩 New msg from ${senderId} to Page ${pageId}: ${userMessage}`);
 
-          // 2. FORMAT HISTORY FOR GROQ
-          const chatContext = history?.reverse().map(m => ({
-            role: m.role as "user" | "assistant",
-            content: m.message_text
-          })) || [];
+    // 1. GET THE BRAIN (System Prompt & Token)
+    const { data: config } = await supabase
+      .from("bot_configs")
+      .select("*")
+      .eq("page_id", pageId)
+      .single();
 
-          // 3. GET THE BRAIN CONFIG
-          const { data: config, error } = await supabase
-            .from('bot_configs')
-            .select('*')
-            .eq('page_id', pageId)
-            .maybeSingle();
-
-          if (error) {
-            console.error("❌ Supabase Query Error:", error.message, error.details, error.hint);
-            continue;
-          }
-
-          if (!config) {
-            console.error(`❌ ID ${pageId} not found in bot_configs table.`);
-            continue;
-          }
-
-          if (!config.is_active) {
-            console.error(`❌ Bot is not active for Page ID: ${pageId}`);
-            continue;
-          }
-
-          // 4. GENERATE RESPONSE WITH CONTEXT
-          const completion = await groq.chat.completions.create({
-            messages: [
-              { role: "system", content: config.system_prompt },
-              ...chatContext,
-              { role: "user", content: userMessage }
-            ],
-            model: "llama-3.3-70b-versatile",
-            temperature: 0.6,
-          });
-
-          const aiReply = completion.choices[0]?.message?.content || "Checking on that for you...";
-
-          // 5. SEND & SAVE
-          await sendMetaMessage(senderId, aiReply, config.access_token);
-
-          await supabase.from('messages').insert({
-            sender_id: senderId,
-            role: 'assistant',
-            message_text: aiReply,
-            platform: 'facebook'
-          });
-        }
-      }
-      return new NextResponse('EVENT_RECEIVED', { status: 200 });
+    if (!config) {
+      console.error(`❌ No config found for Page ID: ${pageId}`);
+      return NextResponse.json({ status: "ok" });
     }
-    return new NextResponse('Not Found', { status: 404 });
-  } catch (error) {
-    console.error("🔥 Server Error:", error);
-    return new NextResponse('Internal Error', { status: 500 });
+
+    // 2. FETCH CHAT HISTORY (The Memory Fix)
+    const { data: history } = await supabase
+      .from("messages")
+      .select("role, message_text")
+      .eq("sender_id", senderId)
+      .order("created_at", { ascending: false })
+      .limit(10);
+
+    // Flip them so they are in chronological order (Oldest -> Newest)
+    const chatHistory = history?.reverse().map((m) => ({
+      role: m.role as "user" | "assistant",
+      content: m.message_text,
+    })) || [];
+
+    // 3. GENERATE AI REPLY
+    const completion = await groq.chat.completions.create({
+      messages: [
+        { role: "system", content: config.system_prompt },
+        ...chatHistory,
+        { role: "user", content: userMessage },
+      ],
+      model: "llama-3.3-70b-versatile",
+      temperature: 0.5,
+    });
+
+    const aiReply = completion.choices[0]?.message?.content || "One moment...";
+
+    // 4. SAVE USER MESSAGE
+    await supabase.from("messages").insert({
+      sender_id: senderId,
+      message_text: userMessage,
+      role: "user",
+      platform: "facebook",
+    });
+
+    // 5. SEND REPLY TO META
+    const response = await fetch(
+      `https://graph.facebook.com/v19.0/me/messages?access_token=${config.access_token}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          recipient: { id: senderId },
+          message: { text: aiReply },
+        }),
+      }
+    );
+
+    // 6. SAVE AI REPLY
+    await supabase.from("messages").insert({
+      sender_id: senderId,
+      message_text: aiReply,
+      role: "assistant",
+      platform: "facebook",
+    });
+
+    return NextResponse.json({ status: "ok" });
+  } catch (err) {
+    console.error("❌ Error:", err);
+    return NextResponse.json({ status: "error" }, { status: 500 });
   }
 }
 
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
-  const mode = searchParams.get('hub.mode');
-  const token = searchParams.get('hub.verify_token');
-  const challenge = searchParams.get('hub.challenge');
+  const mode = searchParams.get("hub.mode");
+  const token = searchParams.get("hub.verify_token");
+  const challenge = searchParams.get("hub.challenge");
 
-  if (mode === 'subscribe' && token === process.env.META_VERIFY_TOKEN) {
+  if (mode === "subscribe" && token === process.env.META_VERIFY_TOKEN) {
     return new NextResponse(challenge, { status: 200 });
   }
-  return new NextResponse('Forbidden', { status: 403 });
-}
-
-async function sendMetaMessage(recipientId: string, text: string, pageToken: string) {
-  const url = `https://graph.facebook.com/v18.0/me/messages?access_token=${pageToken}`;
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      recipient: { id: recipientId },
-      message: { text: text }
-    })
-  });
-
-  const data = await response.json();
-  if (!response.ok) {
-    console.error(`❌ Meta API Error:`, data);
-  } else {
-    console.log(`✅ Sent reply.`);
-  }
+  return new NextResponse("Forbidden", { status: 403 });
 }
