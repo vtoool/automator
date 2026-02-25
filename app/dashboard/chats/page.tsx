@@ -1,11 +1,11 @@
 "use client"
 
 import { useEffect, useState } from 'react'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { Search, Send } from 'lucide-react'
+import { Search, Send, MessageCircle, Facebook, Instagram, MoreVertical, Phone, Archive } from 'lucide-react'
 
 interface Conversation {
   sender_id: string
@@ -23,20 +23,39 @@ interface Message {
   created_at: string
 }
 
-function classifyIntent(message: string): string {
+function classifyIntent(message: string): { label: string; variant: 'success' | 'warning' | 'info' | 'default' } {
   const lower = message.toLowerCase()
-  if (lower.includes('price') || lower.includes('cost') || lower.includes('how much')) return 'Inquiry'
-  if (lower.includes('interested') || lower.includes('want') || lower.includes('buy')) return 'Interested'
-  if (lower.includes('hello') || lower.includes('hi') || lower.includes('hey')) return 'Greeting'
-  if (lower.includes('thanks') || lower.includes('thank')) return 'Nudged'
-  return 'Inquiry'
+  if (lower.includes('price') || lower.includes('cost') || lower.includes('how much')) return { label: 'Inquiry', variant: 'warning' }
+  if (lower.includes('interested') || lower.includes('want') || lower.includes('buy')) return { label: 'Interested', variant: 'success' }
+  if (lower.includes('hello') || lower.includes('hi') || lower.includes('hey')) return { label: 'New', variant: 'info' }
+  if (lower.includes('thanks') || lower.includes('thank')) return { label: 'Nudged', variant: 'default' }
+  return { label: 'Inquiry', variant: 'warning' }
+}
+
+function getInitials(senderId: string): string {
+  return senderId.substring(0, 2).toUpperCase()
+}
+
+function getAvatarColor(senderId: string): string {
+  const colors = [
+    'bg-[var(--accent-cyan)]',
+    'bg-[var(--accent-magenta)]', 
+    'bg-[var(--accent-lime)]',
+    'bg-[var(--accent-amber)]',
+  ]
+  const index = senderId.charCodeAt(0) % colors.length
+  return colors[index]
 }
 
 function formatTime(timestamp: string): string {
-  return new Date(timestamp).toLocaleTimeString('en-US', {
-    hour: 'numeric',
-    minute: '2-digit',
-  })
+  const date = new Date(timestamp)
+  const now = new Date()
+  const isToday = date.toDateString() === now.toDateString()
+  
+  if (isToday) {
+    return date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
+  }
+  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
 }
 
 export default function ChatMonitorPage() {
@@ -48,8 +67,6 @@ export default function ChatMonitorPage() {
 
   useEffect(() => {
     fetchConversations()
-    
-    // Poll for new messages every 5 seconds
     const interval = setInterval(fetchConversations, 5000)
     return () => clearInterval(interval)
   }, [])
@@ -87,89 +104,132 @@ export default function ChatMonitorPage() {
     c.last_message?.toLowerCase().includes(searchQuery.toLowerCase())
   )
 
+  const selectedConversation = conversations.find(c => c.sender_id === selectedSender)
+  const intent = selectedConversation ? classifyIntent(selectedConversation.last_message || '') : null
+
   return (
-    <div className="p-6 h-[calc(100vh-2rem)]">
-      <h2 className="text-2xl font-bold mb-4">Chat Monitor</h2>
+    <div className="h-[calc(100vh-3.5rem)] flex flex-col">
+      {/* Header */}
+      <div className="p-6 pb-4 border-b border-[var(--border-subtle)]">
+        <h1 className="text-2xl font-bold font-mono">Communications</h1>
+        <p className="text-[var(--text-secondary)] text-sm">Monitor and manage conversations</p>
+      </div>
       
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 h-[calc(100%-3rem)]">
+      <div className="flex-1 flex overflow-hidden">
         {/* Left: Conversation List */}
-        <Card className="bg-zinc-900 border-zinc-800 col-span-1 flex flex-col">
-          <CardHeader className="pb-3">
+        <div className="w-full md:w-80 lg:w-96 flex flex-col border-r border-[var(--border-subtle)] bg-[var(--bg-surface)]">
+          {/* Search */}
+          <div className="p-4 border-b border-[var(--border-subtle)]">
             <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-500" />
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-[var(--text-tertiary)]" />
               <Input
                 placeholder="Search conversations..."
-                className="pl-9 bg-zinc-800 border-zinc-700 text-white"
+                className="pl-9 bg-[var(--bg-elevated)] border-[var(--border-subtle)] text-sm"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
               />
             </div>
-          </CardHeader>
-          <CardContent className="flex-1 overflow-auto p-0">
-            <ScrollArea className="h-full">
-              {loading ? (
-                <div className="p-4 text-zinc-500">Loading...</div>
-              ) : filteredConversations.length === 0 ? (
-                <div className="p-4 text-zinc-500">No conversations found</div>
-              ) : (
-                <div className="space-y-1 p-2">
-                  {filteredConversations.map((conv) => (
+          </div>
+          
+          {/* List */}
+          <ScrollArea className="flex-1">
+            {loading ? (
+              <div className="p-4 text-[var(--text-tertiary)] text-sm">Loading...</div>
+            ) : filteredConversations.length === 0 ? (
+              <div className="p-4 text-[var(--text-tertiary)] text-sm">No conversations found</div>
+            ) : (
+              <div className="divide-y divide-[var(--border-subtle)]">
+                {filteredConversations.map((conv) => {
+                  const convIntent = classifyIntent(conv.last_message || '')
+                  return (
                     <button
                       key={conv.sender_id}
                       onClick={() => setSelectedSender(conv.sender_id)}
-                      className={`w-full text-left p-3 rounded-lg transition-colors ${
-                        selectedSender === conv.sender_id
-                          ? 'bg-zinc-800'
-                          : 'hover:bg-zinc-800/50'
+                      className={`w-full text-left p-4 hover:bg-[var(--bg-elevated)] transition-colors ${
+                        selectedSender === conv.sender_id ? 'bg-[var(--bg-elevated)] border-l-2 border-[var(--accent-cyan)]' : ''
                       }`}
                     >
-                      <div className="flex justify-between items-start mb-1">
-                        <span className="font-medium text-white truncate">
-                          {conv.sender_id.substring(0, 12)}...
-                        </span>
-                        <Badge variant={classifyIntent(conv.last_message || '') === 'Interested' ? 'success' : 'warning'}>
-                          {classifyIntent(conv.last_message || '')}
-                        </Badge>
+                      <div className="flex items-start gap-3">
+                        <div className={`w-10 h-10 rounded-full ${getAvatarColor(conv.sender_id)} flex items-center justify-center text-black font-bold text-sm flex-shrink-0`}>
+                          {getInitials(conv.sender_id)}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="font-medium text-sm truncate">
+                              {conv.sender_id.substring(0, 16)}...
+                            </span>
+                            <span className="text-xs text-[var(--text-tertiary)]">
+                              {conv.last_timestamp ? formatTime(conv.last_timestamp) : ''}
+                            </span>
+                          </div>
+                          <p className="text-xs text-[var(--text-secondary)] truncate mb-2">
+                            {conv.last_message || 'No messages'}
+                          </p>
+                          <Badge variant={convIntent.variant as 'success' | 'warning' | 'info' | 'default'} className="text-[10px]">
+                            {convIntent.label}
+                          </Badge>
+                        </div>
                       </div>
-                      <p className="text-sm text-zinc-400 truncate">
-                        {conv.last_message || 'No messages'}
-                      </p>
-                      <p className="text-xs text-zinc-600 mt-1">
-                        {conv.last_timestamp ? formatTime(conv.last_timestamp) : ''}
-                      </p>
                     </button>
-                  ))}
-                </div>
-              )}
-            </ScrollArea>
-          </CardContent>
-        </Card>
+                  )
+                })}
+              </div>
+            )}
+          </ScrollArea>
+        </div>
 
         {/* Right: Chat Window */}
-        <Card className="bg-zinc-900 border-zinc-800 col-span-1 md:col-span-2 flex flex-col">
-          <CardHeader className="border-b border-zinc-800 pb-3">
-            <CardTitle className="text-white text-base">
-              {selectedSender ? `Conversation with ${selectedSender}` : 'Select a conversation'}
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="flex-1 overflow-auto p-4">
-            {selectedSender ? (
-              <ScrollArea className="h-full">
+        <div className="hidden md:flex flex-1 flex-col bg-[var(--bg-void)]">
+          {selectedSender ? (
+            <>
+              {/* Chat Header */}
+              <div className="p-4 border-b border-[var(--border-subtle)] bg-[var(--bg-surface)]">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className={`w-10 h-10 rounded-full ${getAvatarColor(selectedSender)} flex items-center justify-center text-black font-bold text-sm`}>
+                      {getInitials(selectedSender)}
+                    </div>
+                    <div>
+                      <h3 className="font-semibold text-sm">{selectedSender}</h3>
+                      <div className="flex items-center gap-2">
+                        <Facebook className="h-3 w-3 text-[var(--accent-cyan)]" />
+                        {intent && <Badge variant={intent.variant as 'success' | 'warning' | 'info' | 'default'} className="text-[10px]">{intent.label}</Badge>}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button className="p-2 rounded-lg hover:bg-[var(--bg-elevated)] text-[var(--text-secondary)]">
+                      <Phone className="h-4 w-4" />
+                    </button>
+                    <button className="p-2 rounded-lg hover:bg-[var(--bg-elevated)] text-[var(--text-secondary)]">
+                      <Archive className="h-4 w-4" />
+                    </button>
+                    <button className="p-2 rounded-lg hover:bg-[var(--bg-elevated)] text-[var(--text-secondary)]">
+                      <MoreVertical className="h-4 w-4" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+              
+              {/* Messages */}
+              <ScrollArea className="flex-1 p-4">
                 <div className="space-y-4">
                   {messages.map((msg) => (
                     <div
                       key={msg.id}
-                      className={`flex ${msg.role === 'user' ? 'justify-start' : 'justify-end'}`}
+                      className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
                     >
                       <div
-                        className={`max-w-[70%] rounded-lg px-4 py-2 ${
+                        className={`max-w-[70%] rounded-2xl px-4 py-3 ${
                           msg.role === 'user'
-                            ? 'bg-zinc-800 text-white'
-                            : 'bg-blue-600 text-white'
+                            ? 'bg-[var(--accent-magenta)] text-white'
+                            : 'bg-[var(--bg-surface)] border border-[var(--border-subtle)]'
                         }`}
                       >
                         <p className="text-sm">{msg.message_text}</p>
-                        <p className={`text-xs mt-1 ${msg.role === 'user' ? 'text-zinc-500' : 'text-blue-200'}`}>
+                        <p className={`text-[10px] mt-2 ${
+                          msg.role === 'user' ? 'text-white/60' : 'text-[var(--text-tertiary)]'
+                        }`}>
                           {formatTime(msg.created_at)}
                         </p>
                       </div>
@@ -177,13 +237,29 @@ export default function ChatMonitorPage() {
                   ))}
                 </div>
               </ScrollArea>
-            ) : (
-              <div className="flex items-center justify-center h-full text-zinc-500">
-                Select a conversation to view messages
+              
+              {/* Input */}
+              <div className="p-4 border-t border-[var(--border-subtle)] bg-[var(--bg-surface)]">
+                <div className="flex items-center gap-3">
+                  <Input
+                    placeholder="Type a message..."
+                    className="bg-[var(--bg-elevated)] border-[var(--border-subtle)]"
+                  />
+                  <button className="p-3 rounded-lg bg-[var(--accent-cyan)] text-black hover:shadow-[var(--glow-cyan)] transition-all">
+                    <Send className="h-4 w-4" />
+                  </button>
+                </div>
               </div>
-            )}
-          </CardContent>
-        </Card>
+            </>
+          ) : (
+            <div className="flex-1 flex items-center justify-center text-[var(--text-tertiary)]">
+              <div className="text-center">
+                <MessageCircle className="h-16 w-16 mx-auto mb-4 opacity-20" />
+                <p>Select a conversation to view messages</p>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   )

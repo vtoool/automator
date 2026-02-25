@@ -1,13 +1,13 @@
 "use client"
 
 import { useEffect, useState } from 'react'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import { Badge } from '@/components/ui/badge'
-import { Loader2, Save, Power, PowerOff } from 'lucide-react'
+import { Loader2, Save, Power, Trash2, Plus, Server, Key, Brain, CheckCircle2, XCircle } from 'lucide-react'
 
 interface BotConfig {
   id: number
@@ -25,6 +25,7 @@ export default function ConfigsPage() {
   const [saving, setSaving] = useState<number | null>(null)
   const [editMode, setEditMode] = useState<number | null>(null)
   const [formData, setFormData] = useState<Record<number, Partial<BotConfig>>>({})
+  const [deleteConfirm, setDeleteConfirm] = useState<number | null>(null)
 
   useEffect(() => {
     fetchConfigs()
@@ -80,6 +81,7 @@ export default function ConfigsPage() {
   const handleCancel = () => {
     setEditMode(null)
     setFormData({})
+    setDeleteConfirm(null)
   }
 
   const toggleActive = async (config: BotConfig) => {
@@ -99,107 +101,135 @@ export default function ConfigsPage() {
   }
 
   return (
-    <div className="p-6 space-y-6">
-      <div>
-        <h2 className="text-2xl font-bold">Client Configurations</h2>
-        <p className="text-muted-foreground">Manage your AI bot configurations</p>
+    <div className="p-6 lg:p-8 space-y-8">
+      {/* Header */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold font-mono">Neural Networks</h1>
+          <p className="text-[var(--text-secondary)] text-sm">Configure your AI agents</p>
+        </div>
+        <Button className="bg-[var(--accent-cyan)] text-black hover:shadow-[var(--glow-cyan)] transition-all font-semibold">
+          <Plus className="h-4 w-4 mr-2" />
+          Add New Agent
+        </Button>
       </div>
 
       {loading ? (
-        <div className="flex items-center justify-center py-12">
-          <Loader2 className="h-8 w-8 animate-spin text-zinc-500" />
+        <div className="flex items-center justify-center py-20">
+          <Loader2 className="h-8 w-8 animate-spin text-[var(--accent-cyan)]" />
         </div>
       ) : configs.length === 0 ? (
-        <Card className="bg-zinc-900 border-zinc-800">
-          <CardContent className="py-12 text-center text-zinc-500">
-            No bot configurations found. Add one in Supabase.
-          </CardContent>
+        <Card className="bg-[var(--bg-surface)] border-[var(--border-subtle)] p-12 text-center">
+          <Server className="h-16 w-16 mx-auto mb-4 text-[var(--text-tertiary)]" />
+          <h3 className="text-lg font-semibold mb-2">No AI Agents Configured</h3>
+          <p className="text-[var(--text-secondary)] mb-6">Add your first bot configuration to get started</p>
+          <Button className="bg-[var(--accent-cyan)] text-black hover:shadow-[var(--glow-cyan)]">
+            <Plus className="h-4 w-4 mr-2" />
+            Add New Agent
+          </Button>
         </Card>
       ) : (
         <div className="grid gap-6">
           {configs.map((config) => (
-            <Card key={config.id} className="bg-zinc-900 border-zinc-800">
-              <CardHeader className="pb-3">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <CardTitle className="text-lg text-white">
-                      {editMode === config.id ? (
-                        <Input
-                          value={formData[config.id]?.page_name || ''}
-                          onChange={(e) => setFormData(prev => ({
-                            ...prev,
-                            [config.id]: { ...prev[config.id], page_name: e.target.value }
-                          }))}
-                          className="h-8 w-64"
-                        />
-                      ) : (
-                        config.page_name || config.page_id
-                      )}
-                    </CardTitle>
-                    {editMode !== config.id && (
-                      <Badge variant={config.is_active ? 'success' : 'secondary'}>
-                        {config.is_active ? 'Active' : 'Inactive'}
-                      </Badge>
-                    )}
+            <Card 
+              key={config.id} 
+              className={`bg-[var(--bg-surface)] border-[var(--border-subtle)] overflow-hidden transition-all duration-200 ${
+                editMode === config.id ? 'ring-2 ring-[var(--accent-cyan)]' : ''
+              }`}
+            >
+              {/* Card Header */}
+              <div className="p-6 pb-4 border-b border-[var(--border-subtle)] flex items-center justify-between">
+                <div className="flex items-center gap-4">
+                  <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${
+                    config.is_active ? 'bg-[var(--accent-cyan)]/10' : 'bg-[var(--bg-elevated)]'
+                  }`}>
+                    <Brain className={`h-6 w-6 ${config.is_active ? 'text-[var(--accent-cyan)]' : 'text-[var(--text-tertiary)]'}`} />
                   </div>
-                  <div className="flex items-center gap-2">
-                    {editMode === config.id ? (
-                      <>
-                        <Button
-                          size="sm"
-                          onClick={() => handleSave(config.id)}
-                          disabled={saving === config.id}
-                        >
-                          {saving === config.id ? (
-                            <Loader2 className="h-4 w-4 animate-spin" />
-                          ) : (
-                            <Save className="h-4 w-4 mr-2" />
-                          )}
-                          Save
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={handleCancel}
-                        >
-                          Cancel
-                        </Button>
-                      </>
-                    ) : (
-                      <>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => toggleActive(config)}
-                        >
+                  <div>
+                    <div className="flex items-center gap-3">
+                      <h3 className="text-lg font-semibold">
+                        {editMode === config.id ? (
+                          <Input
+                            value={formData[config.id]?.page_name || ''}
+                            onChange={(e) => setFormData(prev => ({
+                              ...prev,
+                              [config.id]: { ...prev[config.id], page_name: e.target.value }
+                            }))}
+                            className="h-8 w-64 bg-[var(--bg-elevated)]"
+                          />
+                        ) : (
+                          config.page_name || config.page_id
+                        )}
+                      </h3>
+                      {editMode !== config.id && (
+                        <Badge variant={config.is_active ? 'success' : 'default'}>
                           {config.is_active ? (
-                            <PowerOff className="h-4 w-4" />
+                            <><CheckCircle2 className="h-3 w-3 mr-1" /> Active</>
                           ) : (
-                            <Power className="h-4 w-4" />
+                            <><XCircle className="h-3 w-3 mr-1" /> Inactive</>
                           )}
-                        </Button>
-                        <Button
-                          size="sm"
-                          onClick={() => handleEdit(config)}
-                        >
-                          Edit
-                        </Button>
-                      </>
-                    )}
+                        </Badge>
+                      )}
+                    </div>
+                    <p className="text-xs text-[var(--text-tertiary)] font-mono mt-1">{config.page_id}</p>
                   </div>
                 </div>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div>
-                  <label className="text-sm text-zinc-400 mb-1 block">Page ID</label>
-                  <Input
-                    value={config.page_id}
-                    disabled
-                    className="bg-zinc-800 border-zinc-700 text-zinc-500"
-                  />
+                <div className="flex items-center gap-2">
+                  {editMode === config.id ? (
+                    <>
+                      <Button
+                        size="sm"
+                        onClick={() => handleSave(config.id)}
+                        disabled={saving === config.id}
+                        className="bg-[var(--accent-cyan)] text-black hover:shadow-[var(--glow-cyan)]"
+                      >
+                        {saving === config.id ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <Save className="h-4 w-4 mr-1" />
+                        )}
+                        Save
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={handleCancel}
+                      >
+                        Cancel
+                      </Button>
+                    </>
+                  ) : (
+                    <>
+                      <button
+                        onClick={() => toggleActive(config)}
+                        className={`p-2 rounded-lg transition-colors ${
+                          config.is_active 
+                            ? 'text-[var(--accent-lime)] hover:bg-[var(--accent-lime)]/10' 
+                            : 'text-[var(--text-tertiary)] hover:bg-[var(--bg-elevated)]'
+                        }`}
+                        title={config.is_active ? 'Deactivate' : 'Activate'}
+                      >
+                        <Power className="h-5 w-5" />
+                      </button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => handleEdit(config)}
+                      >
+                        Configure
+                      </Button>
+                    </>
+                  )}
                 </div>
+              </div>
+              
+              {/* Card Body */}
+              <div className="p-6 space-y-6">
                 <div>
-                  <label className="text-sm text-zinc-400 mb-1 block">System Prompt</label>
+                  <label className="flex items-center gap-2 text-sm font-medium text-[var(--text-secondary)] mb-3">
+                    <Brain className="h-4 w-4" />
+                    System Prompt
+                  </label>
                   {editMode === config.id ? (
                     <Textarea
                       value={formData[config.id]?.system_prompt || ''}
@@ -208,16 +238,20 @@ export default function ConfigsPage() {
                         [config.id]: { ...prev[config.id], system_prompt: e.target.value }
                       }))}
                       rows={6}
-                      className="bg-zinc-800 border-zinc-700"
+                      className="bg-[var(--bg-elevated)] border-[var(--border-subtle)] font-mono text-sm"
+                      placeholder="Enter system prompt..."
                     />
                   ) : (
-                    <div className="bg-zinc-800 rounded-md p-3 text-sm text-zinc-300 max-h-32 overflow-auto">
-                      {config.system_prompt || 'No prompt set'}
+                    <div className="bg-[var(--bg-elevated)] rounded-lg p-4 text-sm text-[var(--text-secondary)] max-h-32 overflow-auto font-mono">
+                      {config.system_prompt || <span className="italic text-[var(--text-tertiary)]">No prompt configured</span>}
                     </div>
                   )}
                 </div>
                 <div>
-                  <label className="text-sm text-zinc-400 mb-1 block">Access Token</label>
+                  <label className="flex items-center gap-2 text-sm font-medium text-[var(--text-secondary)] mb-3">
+                    <Key className="h-4 w-4" />
+                    Access Token
+                  </label>
                   {editMode === config.id ? (
                     <Input
                       value={formData[config.id]?.access_token || ''}
@@ -226,18 +260,19 @@ export default function ConfigsPage() {
                         [config.id]: { ...prev[config.id], access_token: e.target.value }
                       }))}
                       type="password"
-                      className="bg-zinc-800 border-zinc-700"
+                      className="bg-[var(--bg-elevated)] border-[var(--border-subtle)] font-mono"
+                      placeholder="Enter access token..."
                     />
                   ) : (
                     <Input
-                      value={config.access_token ? '••••••••••••••••' : ''}
+                      value={config.access_token ? '••••••••••••••••••••••••' : ''}
                       disabled
                       type="password"
-                      className="bg-zinc-800 border-zinc-700 text-zinc-500"
+                      className="bg-[var(--bg-elevated)] border-[var(--border-subtle)] text-[var(--text-tertiary)] font-mono"
                     />
                   )}
                 </div>
-              </CardContent>
+              </div>
             </Card>
           ))}
         </div>
