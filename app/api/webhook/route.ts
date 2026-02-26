@@ -69,20 +69,7 @@ export async function POST(req: Request) {
       platform: "facebook",
     });
 
-    // 5. SEND REPLY TO META
-    const response = await fetch(
-      `https://graph.facebook.com/v19.0/me/messages?access_token=${config.access_token}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          recipient: { id: senderId },
-          message: { text: aiReply },
-        }),
-      }
-    );
-
-    // 6. SAVE AI REPLY
+    // 5. SAVE AI REPLY
     await supabase.from("messages").insert({
       sender_id: senderId,
       message_text: aiReply,
@@ -90,10 +77,10 @@ export async function POST(req: Request) {
       platform: "facebook",
     });
 
-    return NextResponse.json({ status: "ok" });
+    return NextResponse.json({ reply: aiReply });
   } catch (err) {
     console.error("❌ Error:", err);
-    return NextResponse.json({ status: "error" }, { status: 500 });
+    return NextResponse.json({ reply: "I'm having a little trouble connecting to my database right now, but Victor will get back to you shortly!" }, { status: 500 });
   }
 }
 
