@@ -11,14 +11,15 @@ const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    
-    const userMessage = body.message;
-    const senderId = body.sender_id;
-    const pageId = body.page_id;
+
+    // Support both snake_case and camelCase to be safe
+    const userMessage = body.message || body.userMessage;
+    const senderId = body.sender_id || body.senderId;
+    const pageId = body.page_id || body.pageId;
 
     if (!userMessage || !senderId || !pageId) {
-      console.error("❌ Missing required fields:", { userMessage, senderId, pageId });
-      return NextResponse.json({ reply: "Error: Missing required fields (message, sender_id, page_id)" }, { status: 400 });
+      console.error("❌ Incoming Body:", JSON.stringify(body)); // Log the WHOLE body so we can see it
+      return NextResponse.json({ reply: "Missing Data" }, { status: 400 });
     }
 
     console.log(`📩 New msg from ${senderId} to Page ${pageId}: ${userMessage}`);
