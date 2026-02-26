@@ -200,7 +200,10 @@ export async function POST(req: Request) {
         });
 
         console.log("📤 Second Groq response:", JSON.stringify(secondCompletion.choices[0]?.message));
-        aiReply = secondCompletion.choices[0]?.message?.content || "One moment...";
+        
+        // Explicitly extract and return the final reply
+        const finalReplyText = secondCompletion.choices[0]?.message?.content || "One moment...";
+        aiReply = finalReplyText;
       } 
       else if (toolCall.function.name === "create_order") {
         console.log("🔧 Executing create_order...");
@@ -234,11 +237,16 @@ export async function POST(req: Request) {
             temperature: 0.5,
           });
 
-          aiReply = secondCompletion.choices[0]?.message?.content || "One moment...";
+          const finalReplyText = secondCompletion.choices[0]?.message?.content || "One moment...";
+          aiReply = finalReplyText;
         } catch (err) {
           console.error("❌ Error executing order:", err);
           aiReply = "I apologize, but there was an issue creating your order. Please try again or contact support.";
         }
+      } else {
+        // Unknown tool - fall back to direct response
+        console.log("⚠️ Unknown tool:", toolCall.function.name);
+        aiReply = completion.choices[0]?.message?.content || "One moment...";
       }
     } else {
       // No tool call - model answered directly (might be hallucinating)
@@ -246,6 +254,15 @@ export async function POST(req: Request) {
       aiReply = completion.choices[0]?.message?.content || "One moment...";
     }
 
+    // Ensure we have a reply
+    if (!aiReply || aiReply.trim() === "") {
+      console.error("❌ ERROR: aiReply is empty!");
+      aiReply = "One moment...";
+    }
+
+    console.log("📤 Final reply to send:", aiReply);
+
+    // Save messages to database
     await supabase.from("messages").insert({
       sender_id: senderId,
       message_text: userMessage,
@@ -260,6 +277,7 @@ export async function POST(req: Request) {
       platform: "facebook",
     });
 
+    // Return the response to UChat/Meta
     return NextResponse.json({ reply: aiReply });
   } catch (err) {
     console.error("❌ Error:", err);
