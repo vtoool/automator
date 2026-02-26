@@ -11,15 +11,26 @@ const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 export async function POST(req: Request) {
   try {
     const body = await req.json();
+    console.log("📥 Raw Body Received:", JSON.stringify(body));
 
-    // Support both snake_case and camelCase to be safe
-    const userMessage = body.message || body.userMessage;
-    const senderId = body.sender_id || body.senderId;
-    const pageId = body.page_id || body.pageId;
+    let userMessage, senderId, pageId;
+
+    // Handle Direct Meta Webhook format
+    if (body.object === 'page') {
+      const entry = body.entry?.[0]?.messaging?.[0];
+      userMessage = entry?.message?.text;
+      senderId = entry?.sender?.id;
+      pageId = body.entry?.[0]?.id;
+    } 
+    // Handle UChat format
+    else {
+      userMessage = body.message;
+      senderId = body.sender_id;
+      pageId = body.page_id;
+    }
 
     if (!userMessage || !senderId || !pageId) {
-      console.error("❌ Incoming Body:", JSON.stringify(body)); // Log the WHOLE body so we can see it
-      return NextResponse.json({ reply: "Missing Data" }, { status: 400 });
+      return NextResponse.json({ reply: "Incomplete data" }, { status: 200 }); // Return 200 to stop Meta retries
     }
 
     console.log(`📩 New msg from ${senderId} to Page ${pageId}: ${userMessage}`);
