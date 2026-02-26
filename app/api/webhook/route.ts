@@ -11,30 +11,31 @@ const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const entry = body.entry?.[0];
-    const messaging = entry?.messaging?.[0];
+    
+    const userMessage = body.message;
+    const senderId = body.sender_id;
+    const pageId = body.page_id;
 
-    if (!messaging) return NextResponse.json({ status: "ok" });
-
-    const senderId = messaging.sender.id;
-    const userMessage = messaging.message.text;
-    const pageId = entry.id;
+    if (!userMessage || !senderId || !pageId) {
+      console.error("❌ Missing required fields:", { userMessage, senderId, pageId });
+      return NextResponse.json({ reply: "Error: Missing required fields (message, sender_id, page_id)" }, { status: 400 });
+    }
 
     console.log(`📩 New msg from ${senderId} to Page ${pageId}: ${userMessage}`);
 
     // 1. GET THE BRAIN (System Prompt & Token)
-    const { data: config } = await supabase
+    const { data: config, error: configError } = await supabase
       .from("bot_configs")
       .select("*")
       .eq("page_id", pageId)
       .single();
 
-    if (!config) {
-      console.error(`❌ No config found for Page ID: ${pageId}`);
-      return NextResponse.json({ status: "ok" });
+    if (configError || !config) {
+      console.error(`❌ No config found for Page ID: ${pageId}`, configError);
+      return NextResponse.json({ reply: `Error: No bot config found for page_id ${pageId}` }, { status: 400 });
     }
 
-    // 2. FETCH CHAT HISTORY (The Memory Fix)
+    // 2. FETCH CHAT HISTORY
     const { data: history } = await supabase
       .from("messages")
       .select("role, message_text")
@@ -42,7 +43,6 @@ export async function POST(req: Request) {
       .order("created_at", { ascending: false })
       .limit(10);
 
-    // Flip them so they are in chronological order (Oldest -> Newest)
     const chatHistory = history?.reverse().map((m) => ({
       role: m.role as "user" | "assistant",
       content: m.message_text,
@@ -80,7 +80,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ reply: aiReply });
   } catch (err) {
     console.error("❌ Error:", err);
-    return NextResponse.json({ reply: "I'm having a little trouble connecting to my database right now, but Victor will get back to you shortly!" }, { status: 500 });
+    return NextResponse.json({ reply: `Error processing request: ${err instanceof Error ? err.message : 'Unknown error'}` }, { status: 500 });
   }
 }
 
