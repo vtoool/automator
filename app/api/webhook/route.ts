@@ -14,7 +14,7 @@ const tools = [
     type: "function" as const,
     function: {
       name: "get_active_services",
-      description: "Get the current pricing and service packages offered by the company. Use this when users ask about prices, packages, services, pricing, costs, or what services are available.",
+      description: "Get the current pricing and service packages offered by the company. Use this when users ask about prices, packages, services, pricing, costs, or what services are available. ALWAYS use this tool to get accurate, up-to-date pricing information. Never make up prices.",
       parameters: {
         type: "object",
         properties: {},
@@ -57,6 +57,7 @@ async function fetchServicesFromDB() {
     return [];
   }
 
+  console.log('✅ Database services fetched:', JSON.stringify(data));
   return data || [];
 }
 
@@ -150,8 +151,15 @@ export async function POST(req: Request) {
       content: m.message_text,
     })) || [];
 
-    const systemMessage = { role: "system" as const, content: config.system_prompt };
+    // Add tool instruction to system prompt
+    const toolInstruction = "\n\nIMPORTANT: When the user asks about prices, packages, services, or pricing, you MUST call the get_active_services tool to get accurate, up-to-date information from the database. Never make up prices or use outdated information.";
+    const systemMessage = { 
+      role: "system" as const, 
+      content: config.system_prompt + toolInstruction 
+    };
     const userMsg = { role: "user" as const, content: userMessage };
+
+    console.log("🤖 Sending to Groq with tools...");
 
     const completion = await groq.chat.completions.create({
       messages: [systemMessage, ...chatHistory, userMsg],
@@ -160,16 +168,21 @@ export async function POST(req: Request) {
       tools,
     });
 
+    console.log("📤 Groq response:", JSON.stringify(completion.choices[0]?.message));
+
     let aiReply = "";
 
-    if (completion.choices[0]?.message?.tool_calls) {
+    // Check if Groq wants to call a tool
+    if (completion.choices[0]?.message?.tool_calls && completion.choices[0].message.tool_calls.length > 0) {
       const toolCall = completion.choices[0].message.tool_calls[0];
+      console.log("🔧 Tool call detected:", toolCall.function.name);
 
       if (toolCall.function.name === "get_active_services") {
-        console.log("🔧 Tool called: get_active_services");
+        console.log("🔧 Executing get_active_services...");
         const services = await fetchServicesFromDB();
-        console.log("📦 Services fetched:", services);
+        console.log("📦 Services fetched from DB:", JSON.stringify(services));
 
+        // Second call to Groq with tool result
         const secondCompletion = await groq.chat.completions.create({
           messages: [
             systemMessage,
@@ -186,10 +199,11 @@ export async function POST(req: Request) {
           temperature: 0.5,
         });
 
+        console.log("📤 Second Groq response:", JSON.stringify(secondCompletion.choices[0]?.message));
         aiReply = secondCompletion.choices[0]?.message?.content || "One moment...";
       } 
       else if (toolCall.function.name === "create_order") {
-        console.log("🔧 Tool called: create_order");
+        console.log("🔧 Executing create_order...");
         
         try {
           const args = JSON.parse(toolCall.function.arguments);
@@ -227,6 +241,8 @@ export async function POST(req: Request) {
         }
       }
     } else {
+      // No tool call - model answered directly (might be hallucinating)
+      console.log("⚠️ No tool call detected - model answered without using tools");
       aiReply = completion.choices[0]?.message?.content || "One moment...";
     }
 
