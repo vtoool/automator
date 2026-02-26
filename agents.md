@@ -37,6 +37,8 @@ webhook-receiver/
 │   │   ├── bot-configs/route.ts   # Bot configs CRUD API
 │   │   ├── messages/route.ts       # Messages API
 │   │   └── analytics/route.ts      # Analytics data API
+│   ├── client/
+│   │   └── [orderId]/page.tsx     # Client order portal (dynamic)
 │   ├── dashboard/
 │   │   ├── layout.tsx              # Dashboard layout with navigation
 │   │   ├── page.tsx                # Mission Control (analytics)
@@ -50,9 +52,11 @@ webhook-receiver/
 ├── lib/
 │   ├── supabase.ts                 # Supabase client (anon key)
 │   ├── groq.ts                     # Groq client helper
+│   ├── telegram.ts                 # Telegram notification utility
 │   └── utils.ts                    # Utility functions (cn)
 ├── migrations/
-│   └── 001_create_services_table.sql
+│   ├── 001_create_services_table.sql
+│   └── 002_create_orders_table.sql
 ├── package.json
 ├── tailwind.config.ts
 ├── tsconfig.json
@@ -89,6 +93,15 @@ webhook-receiver/
 - `description` (text)
 - `price` (text)
 - `is_active` (boolean, default true)
+- `created_at` (timestamp)
+
+**orders**
+- `id` (uuid, primary key)
+- `client_name` (text)
+- `client_contact` (text)
+- `service_name` (text)
+- `agreed_price` (text)
+- `status` (text) - 'Pending Configuration', 'In Progress', 'Awaiting Client Review', 'Completed', 'Cancelled'
 - `created_at` (timestamp)
 
 ---
@@ -130,19 +143,39 @@ webhook-receiver/
 
 ## Groq Tool Calling
 
-The webhook implements Groq function calling for the `get_active_services` tool:
+The webhook implements two Groq function calling tools:
 
+### 1. get_active_services
 ```typescript
-const tools = [
-  {
-    type: "function",
-    function: {
-      name: "get_active_services",
-      description: "Get current pricing and service packages...",
-      parameters: { type: "object", properties: {}, required: [] }
+{
+  type: "function",
+  function: {
+    name: "get_active_services",
+    description: "Get current pricing and service packages...",
+    parameters: { type: "object", properties: {}, required: [] }
+  }
+}
+```
+
+### 2. create_order
+```typescript
+{
+  type: "function",
+  function: {
+    name: "create_order",
+    description: "Create a new order when the client explicitly agrees...",
+    parameters: {
+      type: "object",
+      properties: {
+        clientName: { type: "string" },
+        clientContact: { type: "string" },
+        serviceName: { type: "string" },
+        agreedPrice: { type: "string" }
+      },
+      required: ["clientName", "clientContact", "serviceName", "agreedPrice"]
     }
   }
-];
+}
 ```
 
 When the AI determines the user is asking about pricing/services:
@@ -150,6 +183,12 @@ When the AI determines the user is asking about pricing/services:
 2. Execute `fetchServicesFromDB()` to get active services
 3. Make second Groq call with tool result
 4. AI formats the response naturally
+
+When the client agrees to proceed:
+1. First Groq call returns `tool_calls` with `create_order`
+2. Execute `executeOrderCreation()` to save order and send Telegram notification
+3. Make second Groq call with order result (orderId, portalUrl)
+4. AI gives user their tracking link
 
 ---
 
@@ -191,10 +230,13 @@ When the AI determines the user is asking about pricing/services:
 | File | Purpose |
 |------|---------|
 | `app/api/webhook/route.ts` | Main AI webhook with tool calling |
+| `app/client/[orderId]/page.tsx` | Client order portal (dynamic) |
 | `app/dashboard/services/page.tsx` | Service packages admin |
 | `app/dashboard/configs/page.tsx` | Bot configurations admin |
 | `lib/supabase.ts` | Client-side Supabase instance |
+| `lib/telegram.ts` | Telegram notification utility |
 | `migrations/001_create_services_table.sql` | Services table schema |
+| `migrations/002_create_orders_table.sql` | Orders table schema |
 
 ---
 

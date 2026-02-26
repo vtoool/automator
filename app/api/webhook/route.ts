@@ -1,6 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { Groq } from "groq-sdk";
 import { NextResponse } from "next/server";
+import { sendTelegramNotification } from "@/lib/telegram";
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -18,6 +19,23 @@ const tools = [
         type: "object",
         properties: {},
         required: []
+      }
+    }
+  },
+  {
+    type: "function" as const,
+    function: {
+      name: "create_order",
+      description: "Create a new order when the client explicitly agrees to proceed with a specific service and price. Use this when the client says yes, I want to proceed, let's do it, I'll take it, book me in, etc. Only create the order after they have explicitly confirmed.",
+      parameters: {
+        type: "object",
+        properties: {
+          clientName: { type: "string", description: "Client's full name" },
+          clientContact: { type: "string", description: "Contact info (sender_id, email, or phone)" },
+          serviceName: { type: "string", description: "The service/package they agreed to" },
+          agreedPrice: { type: "string", description: "The price they agreed to pay" }
+        },
+        required: ["clientName", "clientContact", "serviceName", "agreedPrice"]
       }
     }
   }
@@ -40,6 +58,48 @@ async function fetchServicesFromDB() {
   }
 
   return data || [];
+}
+
+async function executeOrderCreation(params: {
+  clientName: string;
+  clientContact: string;
+  serviceName: string;
+  agreedPrice: string;
+}) {
+  const supabase = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  );
+
+  const { data, error } = await supabase
+    .from('orders')
+    .insert({
+      client_name: params.clientName,
+      client_contact: params.clientContact,
+      service_name: params.serviceName,
+      agreed_price: params.agreedPrice,
+      status: 'Pending Configuration',
+    })
+    .select()
+    .single();
+
+  if (error || !data) {
+    console.error('Error creating order:', error);
+    return { success: false, error: error?.message || 'Failed to create order' };
+  }
+
+  const domain = process.env.NEXT_PUBLIC_DOMAIN || 'automator-nine.vercel.app';
+  const portalUrl = `https://${domain}/client/${data.id}`;
+  
+  const notificationMessage = `🚨 *NEW ORDER!*\n\n*${params.clientName}* just booked *${params.serviceName}* for *${params.agreedPrice}!*\n\n📋 Status: Pending Configuration\n🔗 Portal: ${portalUrl}`;
+
+  await sendTelegramNotification(notificationMessage);
+
+  return {
+    success: true,
+    orderId: data.id,
+    portalUrl,
+  };
 }
 
 export async function POST(req: Request) {
@@ -127,6 +187,44 @@ export async function POST(req: Request) {
         });
 
         aiReply = secondCompletion.choices[0]?.message?.content || "One moment...";
+      } 
+      else if (toolCall.function.name === "create_order") {
+        console.log("🔧 Tool called: create_order");
+        
+        try {
+          const args = JSON.parse(toolCall.function.arguments);
+          console.log("📝 Order params:", args);
+          
+          const orderResult = await executeOrderCreation({
+            clientName: args.clientName || senderId,
+            clientContact: args.clientContact || senderId,
+            serviceName: args.serviceName,
+            agreedPrice: args.agreedPrice,
+          });
+
+          console.log("✅ Order result:", orderResult);
+
+          const secondCompletion = await groq.chat.completions.create({
+            messages: [
+              systemMessage,
+              ...chatHistory,
+              userMsg,
+              completion.choices[0].message,
+              {
+                role: "tool" as const,
+                tool_call_id: toolCall.id,
+                content: JSON.stringify(orderResult)
+              }
+            ],
+            model: "llama-3.3-70b-versatile",
+            temperature: 0.5,
+          });
+
+          aiReply = secondCompletion.choices[0]?.message?.content || "One moment...";
+        } catch (err) {
+          console.error("❌ Error executing order:", err);
+          aiReply = "I apologize, but there was an issue creating your order. Please try again or contact support.";
+        }
       }
     } else {
       aiReply = completion.choices[0]?.message?.content || "One moment...";
