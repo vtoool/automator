@@ -26,7 +26,7 @@ const tools = [
     type: "function" as const,
     function: {
       name: "create_order",
-      description: "Create a new order when the client explicitly agrees to proceed with a specific service and price. Use this when the client says yes, I want to proceed, let's do it, I'll take it, book me in, etc. Only create an order after they have explicitly confirmed the purchase.",
+      description: "Create a new order when the client explicitly agrees to proceed with a specific service and price. Use this when the client says yes, I want to proceed, let's do it, I'll take it, book me in, etc. Only create an order after they have explicitly confirmed to purchase.",
       parameters: {
         type: "object",
         properties: {
@@ -172,6 +172,7 @@ export async function POST(req: Request) {
 
     let aiReply = "";
 
+    // Handle tool calls
     if (completion.choices[0]?.message?.tool_calls && completion.choices[0].message.tool_calls.length > 0) {
       const toolCall = completion.choices[0].message.tool_calls[0];
       console.log("🔧 Tool call detected:", toolCall.function.name);
@@ -253,8 +254,10 @@ export async function POST(req: Request) {
       console.log("⚠️ No tool call detected - model answered without using tools");
       aiReply = completion.choices[0]?.message?.content || "One moment...";
       console.log("✅ aiReply set from no tool:", aiReply);
+      return;
     }
 
+    // Ensure we have a reply
     if (!aiReply || aiReply.trim() === "") {
       console.error("❌ ERROR: aiReply is empty!");
       aiReply = "One moment...";
@@ -263,6 +266,7 @@ export async function POST(req: Request) {
     console.log("📤 Final reply to send:", aiReply);
     console.log("📤 aiReply length:", aiReply?.length || 0);
 
+    // Save messages to database
     await supabase.from("messages").insert({
       sender_id: senderId,
       message_text: userMessage,
