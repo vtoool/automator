@@ -107,6 +107,7 @@ export async function POST(req: Request) {
   try {
     const body = await req.json();
     console.log("📥 Raw Body Received:", JSON.stringify(body));
+    let finalAiReply = "";
 
     let userMessage, senderId, pageId;
 
@@ -170,8 +171,6 @@ export async function POST(req: Request) {
 
     console.log("📤 Groq response:", JSON.stringify(completion.choices[0]?.message));
 
-    let aiReply = "";
-
     // Handle tool calls
     if (completion.choices[0]?.message?.tool_calls && completion.choices[0].message.tool_calls.length > 0) {
       const toolCall = completion.choices[0].message.tool_calls[0];
@@ -199,9 +198,8 @@ export async function POST(req: Request) {
         });
 
         console.log("📤 Second Groq response:", JSON.stringify(secondCompletion.choices[0]?.message));
-        aiReply = secondCompletion.choices[0]?.message?.content || "One moment...";
-        console.log("✅ aiReply set from get_active_services:", aiReply);
-        return;
+        finalAiReply = secondCompletion.choices[0]?.message?.content || "One moment...";
+        console.log("✅ finalAiReply set from get_active_services:", finalAiReply);
       } 
       else if (toolCall.function.name === "create_order") {
         console.log("🔧 Executing create_order...");
@@ -235,36 +233,32 @@ export async function POST(req: Request) {
             temperature: 0.5,
           });
 
-          aiReply = secondCompletion.choices[0]?.message?.content || "One moment...";
-          console.log("✅ aiReply set from create_order:", aiReply);
-          return;
+          finalAiReply = secondCompletion.choices[0]?.message?.content || "One moment...";
+          console.log("✅ finalAiReply set from create_order:", finalAiReply);
         } catch (err) {
           console.error("❌ Error executing order:", err);
-          aiReply = "I apologize, but there was an issue creating your order. Please try again or contact support.";
-          console.log("✅ aiReply set from create_order error:", aiReply);
-          return;
+          finalAiReply = "I apologize, but there was an issue creating your order. Please try again or contact support.";
+          console.log("✅ finalAiReply set from create_order error:", finalAiReply);
         }
       } else {
         console.log("⚠️ Unknown tool:", toolCall.function.name);
-        aiReply = "I apologize, but I encountered an unexpected issue. Please try again.";
-        console.log("✅ aiReply set from unknown tool:", aiReply);
-        return;
+        finalAiReply = "I apologize, but I encountered an unexpected issue. Please try again.";
+        console.log("✅ finalAiReply set from unknown tool:", finalAiReply);
       }
     } else {
       console.log("⚠️ No tool call detected - model answered without using tools");
-      aiReply = completion.choices[0]?.message?.content || "One moment...";
-      console.log("✅ aiReply set from no tool:", aiReply);
-      return;
+      finalAiReply = completion.choices[0]?.message?.content || "One moment...";
+      console.log("✅ finalAiReply set from no tool:", finalAiReply);
     }
 
     // Ensure we have a reply
-    if (!aiReply || aiReply.trim() === "") {
-      console.error("❌ ERROR: aiReply is empty!");
-      aiReply = "One moment...";
+    if (!finalAiReply || finalAiReply.trim() === "") {
+      console.error("❌ ERROR: finalAiReply is empty!");
+      finalAiReply = "One moment...";
     }
 
-    console.log("📤 Final reply to send:", aiReply);
-    console.log("📤 aiReply length:", aiReply?.length || 0);
+    console.log("📤 Final reply to send:", finalAiReply);
+    console.log("📤 finalAiReply length:", finalAiReply?.length || 0);
 
     // Save messages to database
     await supabase.from("messages").insert({
@@ -276,13 +270,13 @@ export async function POST(req: Request) {
 
     await supabase.from("messages").insert({
       sender_id: senderId,
-      message_text: aiReply,
+      message_text: finalAiReply,
       role: "assistant",
       platform: "facebook",
     });
 
-    console.log("✅ About to return response:", JSON.stringify({ reply: aiReply }));
-    return NextResponse.json({ reply: aiReply });
+    console.log("✅ About to return response:", JSON.stringify({ reply: finalAiReply }));
+    return NextResponse.json({ reply: finalAiReply });
   } catch (err) {
     console.error("❌ Error:", err);
     return NextResponse.json({ reply: `Error processing request: ${err instanceof Error ? err.message : 'Unknown error'}` }, { status: 500 });
