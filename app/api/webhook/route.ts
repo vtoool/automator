@@ -250,8 +250,8 @@ export async function POST(req: Request) {
 
     const completion = await groq.chat.completions.create({
       messages: [systemMessage, ...chatHistory, userMsg],
-      model: "llama-3.3-70b-versatile",
-      temperature: 0.3,
+      model: "llama3-70b-8192",
+      temperature: 0.5,
       tools,
     });
 
@@ -279,8 +279,8 @@ export async function POST(req: Request) {
               content: JSON.stringify(services)
             }
           ],
-          model: "llama-3.3-70b-versatile",
-          temperature: 0.3,
+          model: "llama3-70b-8192",
+          temperature: 0.5,
         });
 
         console.log("📤 Second Groq response:", JSON.stringify(secondCompletion.choices[0]?.message));
@@ -315,8 +315,8 @@ export async function POST(req: Request) {
                 content: JSON.stringify(orderResult)
               }
             ],
-            model: "llama-3.3-70b-versatile",
-            temperature: 0.3,
+            model: "llama3-70b-8192",
+            temperature: 0.5,
           });
 
           finalAiReply = secondCompletion.choices[0]?.message?.content || "One moment...";
@@ -356,8 +356,8 @@ export async function POST(req: Request) {
                 content: JSON.stringify(interventionResult)
               }
             ],
-            model: "llama-3.3-70b-versatile",
-            temperature: 0.3,
+            model: "llama3-70b-8192",
+            temperature: 0.5,
           });
 
           finalAiReply = secondCompletion.choices[0]?.message?.content || "I've just pinged our team, and someone will review this and reply shortly!";
