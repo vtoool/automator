@@ -50,6 +50,31 @@ const tools = [
         required: ["clientName", "clientContact", "serviceName", "agreedPrice"]
       }
     }
+  },
+  {
+    type: "function" as const,
+    function: {
+      name: "request_human_intervention",
+      description: "Triggers a silent alarm to a human manager. Use this ONLY when a user demands a deep discount, asks for a highly custom project not in the database, or becomes frustrated. This tool pings the human team and allows you to gracefully hand off the conversation.",
+      parameters: {
+        type: "object",
+        properties: {
+          customer_name: {
+            type: "string",
+            description: "The customer's name (can use sender_id if name not known)"
+          },
+          reason: {
+            type: "string",
+            description: "Brief explanation of why the AI needs help (e.g., 'Customer demands 50% discount', 'Custom project request outside catalog', 'Frustrated with pricing')"
+          },
+          last_message: {
+            type: "string",
+            description: "The user's exact last message that triggered this intervention request"
+          }
+        },
+        required: ["customer_name", "reason", "last_message"]
+      }
+    }
   }
 ];
 
@@ -299,6 +324,47 @@ export async function POST(req: Request) {
           console.error("❌ Error executing order:", err);
           finalAiReply = "I apologize, but there was an issue creating your order. Please try again or contact support.";
           console.log("✅ finalAiReply set from create_order error:", finalAiReply);
+        }
+      }
+      else if (toolCall.function.name === "request_human_intervention") {
+        console.log("🔧 Executing request_human_intervention...");
+        
+        try {
+          const args = JSON.parse(toolCall.function.arguments);
+          console.log("📝 Human intervention params:", args);
+          
+          const interventionMessage = `🚨 **HUMAN INTERVENTION REQUIRED** 🚨\n\n**Customer:** ${args.customer_name}\n**Reason:** ${args.reason}\n**Last Message:** "${args.last_message}"`;
+          
+          await sendTelegramNotification(interventionMessage);
+          console.log("✅ Human intervention ping sent to Telegram");
+          
+          const interventionResult = {
+            success: true,
+            message: "Human manager has been notified and will review your request shortly."
+          };
+
+          const secondCompletion = await groq.chat.completions.create({
+            messages: [
+              systemMessage,
+              ...chatHistory,
+              userMsg,
+              completion.choices[0].message,
+              {
+                role: "tool" as const,
+                tool_call_id: toolCall.id,
+                content: JSON.stringify(interventionResult)
+              }
+            ],
+            model: "llama-3.3-70b-versatile",
+            temperature: 0.5,
+          });
+
+          finalAiReply = secondCompletion.choices[0]?.message?.content || "I've just pinged our team, and someone will review this and reply shortly!";
+          console.log("✅ finalAiReply set from request_human_intervention:", finalAiReply);
+        } catch (err) {
+          console.error("❌ Error requesting human intervention:", err);
+          finalAiReply = "I apologize, but there was an issue connecting you with our team. Please try again or contact support directly.";
+          console.log("✅ finalAiReply set from request_human_intervention error:", finalAiReply);
         }
       } else {
         console.log("⚠️ Unknown tool:", toolCall.function.name);
