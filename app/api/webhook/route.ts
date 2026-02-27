@@ -14,7 +14,7 @@ const tools = [
     type: "function" as const,
     function: {
       name: "get_active_services",
-      description: "Get the current pricing and service packages offered by the company. Use this when users ask about prices, packages, services, pricing, costs, or what services are available.",
+      description: "Get the current pricing and service packages offered by the company. Use this when users ask about prices, packages, services, pricing, costs, or what services are available. The database contains the most accurate and up-to-date information, which should take priority over any information in the chat history.",
       parameters: {
         type: "object",
         properties: {},
@@ -26,13 +26,13 @@ const tools = [
     type: "function" as const,
     function: {
       name: "create_order",
-      description: "Create a new order when the client explicitly agrees to proceed with a specific service and price. Use this when the client says yes, I want to proceed, let's do it, I'll take it, book me in, etc. Only create the order after they have explicitly confirmed.",
+      description: "Create a new order when the client explicitly agrees to proceed with a specific service and price. Use this when the client says yes, I want to proceed, let's do it, I'll take it, book me in, etc. Only create an order after they have explicitly confirmed the purchase.",
       parameters: {
         type: "object",
         properties: {
           clientName: { type: "string", description: "The client's full name" },
-          clientContact: { type: "string", description: "Contact info (sender_id, email, or phone)" },
-          serviceName: { type: "string", description: "The service/package they agreed to" },
+          clientContact: { type: "string", description: "Contact information (sender_id, email, or phone)" },
+          serviceName: { type: "string", description: "The service or package they agreed to purchase" },
           agreedPrice: { type: "string", description: "The price they agreed to pay" }
         },
         required: ["clientName", "clientContact", "serviceName", "agreedPrice"]
@@ -123,6 +123,7 @@ export async function POST(req: Request) {
     }
 
     if (!userMessage || !senderId || !pageId) {
+      console.log("⚠️ Incomplete data, returning early");
       return NextResponse.json({ reply: "Incomplete data" }, { status: 200 });
     }
 
@@ -151,7 +152,7 @@ export async function POST(req: Request) {
       content: m.message_text,
     })) || [];
 
-    const toolInstruction = "\n\nIMPORTANT: When the user asks about pricing from tools, that takes priority. The database contains the correct, up-to-date information.";
+    const toolInstruction = "\n\nIMPORTANT: When the user asks about pricing, packages, services, or pricing information, you MUST use the get_active_services tool to fetch the current, accurate information from the database. The database contains the most up-to-date and accurate information, which should take priority over any information in the chat history or in your training data. Never make up prices or use information from chat history for pricing questions.";
     const systemMessage = { 
       role: "system" as const, 
       content: config.system_prompt + toolInstruction 
@@ -198,6 +199,8 @@ export async function POST(req: Request) {
 
         console.log("📤 Second Groq response:", JSON.stringify(secondCompletion.choices[0]?.message));
         aiReply = secondCompletion.choices[0]?.message?.content || "One moment...";
+        console.log("✅ aiReply set from get_active_services:", aiReply);
+        return;
       } 
       else if (toolCall.function.name === "create_order") {
         console.log("🔧 Executing create_order...");
@@ -232,14 +235,24 @@ export async function POST(req: Request) {
           });
 
           aiReply = secondCompletion.choices[0]?.message?.content || "One moment...";
+          console.log("✅ aiReply set from create_order:", aiReply);
+          return;
         } catch (err) {
           console.error("❌ Error executing order:", err);
           aiReply = "I apologize, but there was an issue creating your order. Please try again or contact support.";
+          console.log("✅ aiReply set from create_order error:", aiReply);
+          return;
         }
+      } else {
+        console.log("⚠️ Unknown tool:", toolCall.function.name);
+        aiReply = "I apologize, but I encountered an unexpected issue. Please try again.";
+        console.log("✅ aiReply set from unknown tool:", aiReply);
+        return;
       }
     } else {
       console.log("⚠️ No tool call detected - model answered without using tools");
       aiReply = completion.choices[0]?.message?.content || "One moment...";
+      console.log("✅ aiReply set from no tool:", aiReply);
     }
 
     if (!aiReply || aiReply.trim() === "") {
@@ -248,7 +261,7 @@ export async function POST(req: Request) {
     }
 
     console.log("📤 Final reply to send:", aiReply);
-    console.log("📤 aiReply length:", aiReply.length);
+    console.log("📤 aiReply length:", aiReply?.length || 0);
 
     await supabase.from("messages").insert({
       sender_id: senderId,
