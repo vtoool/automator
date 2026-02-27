@@ -14,7 +14,7 @@ const tools = [
     type: "function" as const,
     function: {
       name: "get_active_services",
-      description: "Get the current pricing and service packages offered by the company. Use this when users ask about prices, packages, services, pricing, costs, or what services are available. The database contains the most accurate and up-to-date information, which should take priority over any information in the chat history.",
+      description: "Get current pricing and service packages offered by company. Use this when users ask about prices, packages, services, pricing, costs, or what services are available. The database contains the most accurate and up-to-date information, which should take priority over any information in the chat history.",
       parameters: {
         type: "object",
         properties: {},
@@ -190,8 +190,11 @@ async function executeOrderCreation(params: {
 
 export async function POST(req: Request) {
   try {
+    console.log("🚀 Webhook Triggered");
+    
     const body = await req.json();
-    console.log("📥 Raw Body Received:", JSON.stringify(body));
+    console.log("📥 Incoming Webhook Body:", JSON.stringify(body, null, 2));
+    
     let finalAiReply = "";
     let aiAction = "none";
 
@@ -202,20 +205,23 @@ export async function POST(req: Request) {
       userMessage = entry?.message?.text;
       senderId = entry?.sender?.id;
       pageId = body.entry?.[0]?.id;
+      userName = entry?.sender?.name || 'User';
+      console.log("📱 Facebook webhook detected:", { userMessage, senderId, pageId, userName });
     } 
     else {
       userMessage = body.message;
       senderId = body.sender_id;
       pageId = body.page_id;
-      userName = body.user_name;
+      userName = body.user_name || 'User';
+      console.log("💬 UChat webhook detected:", { userMessage, senderId, pageId, userName });
     }
 
     if (!userMessage || !senderId || !pageId) {
-      console.log("⚠️ Incomplete data, returning early");
+      console.log("⚠️ Incomplete data, returning early:", { userMessage, senderId, pageId });
       return NextResponse.json({ reply: "Incomplete data" }, { status: 200 });
     }
 
-    console.log(`📩 New msg from ${senderId} to Page ${pageId}: ${userMessage}`);
+    console.log(`📩 New message from ${userName} (${senderId}) to Page ${pageId}: ${userMessage}`);
 
     const { data: config, error: configError } = await supabase
       .from("bot_configs")
@@ -258,7 +264,6 @@ export async function POST(req: Request) {
 
     console.log("📤 Groq response:", JSON.stringify(completion.choices[0]?.message));
 
-    // Handle tool calls
     if (completion.choices[0]?.message?.tool_calls && completion.choices[0].message.tool_calls.length > 0) {
       const toolCall = completion.choices[0].message.tool_calls[0];
       console.log("🔧 Tool call detected:", toolCall.function.name);
@@ -296,7 +301,7 @@ export async function POST(req: Request) {
           console.log("📝 Order params:", args);
           
           const orderResult = await executeOrderCreation({
-            clientName: args.clientName || senderId,
+            clientName: args.clientName || userName || senderId,
             clientContact: args.clientContact || senderId,
             serviceName: args.serviceName,
             agreedPrice: args.agreedPrice,
@@ -335,7 +340,8 @@ export async function POST(req: Request) {
           const args = JSON.parse(toolCall.function.arguments);
           console.log("📝 Human intervention params:", args);
           
-          const interventionMessage = `🚨 **HUMAN INTERVENTION REQUIRED** 🚨\n\n**Customer:** ${userName || 'Unknown User'} (ID: ${senderId})\n**Reason:** ${args.reason}\n**Last Message:** "${args.last_message}"`;
+          const inboxLink = `https://www.facebook.com/messages/t/${pageId}/${senderId}`;
+          const interventionMessage = `🚨 **HUMAN INTERVENTION REQUIRED** 🚨\n\n**Customer:** ${userName}\n**ID:** ${senderId}\n**Reason:** ${args.reason}\n**Last Message:** "${args.last_message}"\n\n🔗 Inbox: ${inboxLink}`;
           
           await sendTelegramNotification(interventionMessage);
           console.log("✅ Human intervention ping sent to Telegram");
@@ -381,7 +387,6 @@ export async function POST(req: Request) {
       console.log("✅ finalAiReply set from no tool:", finalAiReply);
     }
 
-    // Ensure we have a reply
     if (!finalAiReply || finalAiReply.trim() === "") {
       console.error("❌ ERROR: finalAiReply is empty!");
       finalAiReply = "One moment...";
@@ -389,8 +394,8 @@ export async function POST(req: Request) {
 
     console.log("📤 Final reply to send:", finalAiReply);
     console.log("📤 finalAiReply length:", finalAiReply?.length || 0);
+    console.log("📤 aiAction:", aiAction);
 
-    // Save messages to database
     await supabase.from("messages").insert({
       sender_id: senderId,
       message_text: userMessage,
@@ -408,7 +413,9 @@ export async function POST(req: Request) {
     console.log("✅ About to return response:", JSON.stringify({ reply: finalAiReply, action: aiAction }));
     return NextResponse.json({ reply: finalAiReply, action: aiAction });
   } catch (err) {
-    console.error("❌ Error:", err);
+    console.error("❌ FATAL ERROR in webhook:");
+    console.error("Error message:", err instanceof Error ? err.message : 'Unknown error');
+    console.error("Error stack:", err instanceof Error ? err.stack : 'No stack available');
     return NextResponse.json({ reply: `Error processing request: ${err instanceof Error ? err.message : 'Unknown error'}` }, { status: 500 });
   }
 }
