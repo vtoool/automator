@@ -26,14 +26,26 @@ const tools = [
     type: "function" as const,
     function: {
       name: "create_order",
-      description: "Create a new order when the client explicitly agrees to proceed with a specific service and price. Use this when the client says yes, I want to proceed, let's do it, I'll take it, book me in, etc. Only create an order after they have explicitly confirmed to purchase.",
+      description: "CRITICAL: Create a new order ONLY when the client explicitly agrees to proceed with a SPECIFIC, VALID service package. Use this EXCLUSIVELY when the client says yes, I want to proceed, let's do it, I'll take it, book me in, etc. BEFORE calling this function, you MUST have already used get_active_services to verify the service exists. DO NOT create orders for items that are not in the service catalog (e.g., no food, physical goods, random products). Only create an order after explicit confirmation to purchase a VALID service.",
       parameters: {
         type: "object",
         properties: {
-          clientName: { type: "string", description: "The client's full name" },
-          clientContact: { type: "string", description: "Contact information (sender_id, email, or phone)" },
-          serviceName: { type: "string", description: "The service or package they agreed to purchase" },
-          agreedPrice: { type: "string", description: "The price they agreed to pay" }
+          clientName: { 
+            type: "string", 
+            description: "The client's full name. Must be a real person's name, not a placeholder or nickname." 
+          },
+          clientContact: { 
+            type: "string", 
+            description: "Contact information - can be sender_id, email, or phone number. Must be valid contact info." 
+          },
+          serviceName: { 
+            type: "string", 
+            description: "The EXACT name of the service being ordered. MUST perfectly match one of the services returned by get_active_services tool from the database. STRICT VALIDATION: This MUST be a valid, active service from the catalog. DO NOT accept out-of-scope requests like food (pizza, burgers), physical goods (electronics, clothing), personal items, or anything not listed in the service packages. Examples of VALID services: 'Basic Website Package', 'E-commerce Setup', 'SEO Optimization', 'Social Media Management', 'Custom Development'. Examples of INVALID services: 'Pizza', 'Burger', 'iPhone', 'T-shirt', 'Laptop', 'Random item'. If the service name does not match an active database service, return an error and do not create the order." 
+          },
+          agreedPrice: { 
+            type: "string", 
+            description: "The price they agreed to pay. Must match the exact pricing from the service catalog returned by get_active_services. Format as currency (e.g., '50 EUR', '100 USD', '299 EUR')." 
+          }
         },
         required: ["clientName", "clientContact", "serviceName", "agreedPrice"]
       }
@@ -61,12 +73,60 @@ async function fetchServicesFromDB() {
   return data || [];
 }
 
+async function validateServiceExists(serviceName: string): Promise<{ valid: boolean; errorMessage?: string }> {
+  const supabase = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  );
+
+  const { data, error } = await supabase
+    .from('services')
+    .select('name, price')
+    .eq('is_active', true);
+
+  if (error || !data) {
+    console.error('Error validating service:', error);
+    return { valid: false, errorMessage: 'Unable to validate service. Please try again.' };
+  }
+
+  const validServiceNames = data.map(s => s.name.toLowerCase());
+  const serviceNameLower = serviceName.toLowerCase().trim();
+  
+  const isValid = validServiceNames.includes(serviceNameLower);
+  
+  if (!isValid) {
+    const availableServices = data.map(s => s.name).join(', ');
+    console.log(`❌ Invalid service requested: "${serviceName}". Available services: ${availableServices}`);
+    return { 
+      valid: false, 
+      errorMessage: `Invalid service requested. The service "${serviceName}" is not available. Please choose from our available services: ${availableServices}`
+    };
+  }
+
+  const matchedService = data.find(s => s.name.toLowerCase() === serviceNameLower);
+  console.log(`✅ Service validated: "${matchedService?.name}"`);
+  return { valid: true };
+}
+
 async function executeOrderCreation(params: {
   clientName: string;
   clientContact: string;
   serviceName: string;
   agreedPrice: string;
 }) {
+  console.log(`🔍 Validating service: "${params.serviceName}"`);
+  
+  const validation = await validateServiceExists(params.serviceName);
+  
+  if (!validation.valid) {
+    console.log(`❌ Service validation failed: ${validation.errorMessage}`);
+    return { 
+      success: false, 
+      error: validation.errorMessage || 'Invalid service requested',
+      isValidationError: true
+    };
+  }
+
   const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
@@ -153,7 +213,7 @@ export async function POST(req: Request) {
       content: m.message_text,
     })) || [];
 
-    const toolInstruction = "\n\nIMPORTANT: When the user asks about pricing, packages, services, or pricing information, you MUST use the get_active_services tool to fetch the current, accurate information from the database. The database contains the most up-to-date and accurate information, which should take priority over any information in the chat history or in your training data. Never make up prices or use information from chat history for pricing questions.";
+    const toolInstruction = "\n\nIMPORTANT: When the user asks about pricing, packages, services, or pricing information, you MUST use the get_active_services tool to fetch the current, accurate information from the database. The database contains the most up-to-date and accurate information, which should take priority over any information in the chat history or in your training data. Never make up prices or use information from chat history for pricing questions.\n\nCRITICAL ORDER INSTRUCTIONS: When creating an order with create_order tool, you MUST have already verified the service exists using get_active_services. DO NOT create orders for invalid services (food, physical goods, etc.). After the order is created, the tool will return a portalUrl. You MUST provide the EXACT portalUrl returned by the tool to the user. DO NOT generate fake Calendly links, fake booking links, or any other fake URLs. Only use the exact portalUrl from the tool response.";
     const systemMessage = { 
       role: "system" as const, 
       content: config.system_prompt + toolInstruction 
