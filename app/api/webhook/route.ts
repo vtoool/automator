@@ -195,7 +195,7 @@ export async function POST(req: Request) {
     let finalAiReply = "";
     let aiAction = "none";
 
-    let userMessage, senderId, pageId;
+    let userMessage, senderId, pageId, userName;
 
     if (body.object === 'page') {
       const entry = body.entry?.[0]?.messaging?.[0];
@@ -207,6 +207,7 @@ export async function POST(req: Request) {
       userMessage = body.message;
       senderId = body.sender_id;
       pageId = body.page_id;
+      userName = body.user_name;
     }
 
     if (!userMessage || !senderId || !pageId) {
@@ -334,7 +335,7 @@ export async function POST(req: Request) {
           const args = JSON.parse(toolCall.function.arguments);
           console.log("📝 Human intervention params:", args);
           
-          const interventionMessage = `🚨 **HUMAN INTERVENTION REQUIRED** 🚨\n\n**Customer:** ${args.customer_name}\n**Reason:** ${args.reason}\n**Last Message:** "${args.last_message}"`;
+          const interventionMessage = `🚨 **HUMAN INTERVENTION REQUIRED** 🚨\n\n**Customer:** ${userName || 'Unknown User'} (ID: ${senderId})\n**Reason:** ${args.reason}\n**Last Message:** "${args.last_message}"`;
           
           await sendTelegramNotification(interventionMessage);
           console.log("✅ Human intervention ping sent to Telegram");
