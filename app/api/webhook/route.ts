@@ -193,6 +193,7 @@ export async function POST(req: Request) {
     const body = await req.json();
     console.log("📥 Raw Body Received:", JSON.stringify(body));
     let finalAiReply = "";
+    let aiAction = "none";
 
     let userMessage, senderId, pageId;
 
@@ -361,6 +362,8 @@ export async function POST(req: Request) {
 
           finalAiReply = secondCompletion.choices[0]?.message?.content || "I've just pinged our team, and someone will review this and reply shortly!";
           console.log("✅ finalAiReply set from request_human_intervention:", finalAiReply);
+          aiAction = "pause";
+          console.log("🚨 AI action set to pause for human handoff");
         } catch (err) {
           console.error("❌ Error requesting human intervention:", err);
           finalAiReply = "I apologize, but there was an issue connecting you with our team. Please try again or contact support directly.";
@@ -401,8 +404,8 @@ export async function POST(req: Request) {
       platform: "facebook",
     });
 
-    console.log("✅ About to return response:", JSON.stringify({ reply: finalAiReply }));
-    return NextResponse.json({ reply: finalAiReply });
+    console.log("✅ About to return response:", JSON.stringify({ reply: finalAiReply, action: aiAction }));
+    return NextResponse.json({ reply: finalAiReply, action: aiAction });
   } catch (err) {
     console.error("❌ Error:", err);
     return NextResponse.json({ reply: `Error processing request: ${err instanceof Error ? err.message : 'Unknown error'}` }, { status: 500 });
