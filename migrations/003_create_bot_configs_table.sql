@@ -1,13 +1,5 @@
--- Create bot_configs table if it doesn't exist
-CREATE TABLE IF NOT EXISTS bot_configs (
-  id SERIAL PRIMARY KEY,
-  page_id TEXT UNIQUE NOT NULL,
-  page_name TEXT,
-  system_prompt TEXT,
-  access_token TEXT,
-  is_active BOOLEAN DEFAULT true,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
+-- Add missing columns to bot_configs if they don't exist
+ALTER TABLE bot_configs ADD COLUMN IF NOT EXISTS created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
 
 -- Enable RLS
 ALTER TABLE bot_configs ENABLE ROW LEVEL SECURITY;

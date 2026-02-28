@@ -10,8 +10,7 @@ export async function GET() {
     
     const { data, error } = await supabase
       .from('bot_configs')
-      .select('*')
-      .order('created_at', { ascending: false });
+      .select('*');
 
     if (error) {
       console.error('❌ Supabase error:', error);
