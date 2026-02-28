@@ -255,14 +255,7 @@ export async function POST(req: Request) {
 
     console.log("🤖 Starting tool calling loop...");
 
-    type ChatMessage = {
-      role: "system" | "user" | "assistant";
-      content: string;
-      tool_calls?: any[];
-      tool_call_id?: string;
-    };
-
-    let messages: ChatMessage[] = [systemMessage, ...chatHistory, userMsg];
+    let messages: any[] = [systemMessage, ...chatHistory, userMsg];
     let maxIterations = 10;
     let iteration = 0;
 
