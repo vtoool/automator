@@ -2,6 +2,7 @@
 
 import Link from 'next/link'
 import { BarChart3, MessageSquare, Settings, Cpu, Menu, X, Package, ShoppingCart, Users } from 'lucide-react'
+import { useState } from 'react'
 
 const navigation = [
   { name: 'Mission Control', href: '/dashboard', icon: BarChart3 },
