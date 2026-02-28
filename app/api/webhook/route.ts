@@ -255,7 +255,14 @@ export async function POST(req: Request) {
 
     console.log("🤖 Starting tool calling loop...");
 
-    let messages = [systemMessage, ...chatHistory, userMsg];
+    type ChatMessage = {
+      role: "system" | "user" | "assistant";
+      content: string;
+      tool_calls?: any[];
+      tool_call_id?: string;
+    };
+
+    let messages: ChatMessage[] = [systemMessage, ...chatHistory, userMsg];
     let maxIterations = 10;
     let iteration = 0;
 
@@ -338,10 +345,10 @@ export async function POST(req: Request) {
         }
 
         messages.push({
-          role: "tool" as const,
+          role: "assistant" as const,
           tool_call_id: toolCall.id,
           content: toolResult,
-        });
+        } as any);
       }
     }
 
