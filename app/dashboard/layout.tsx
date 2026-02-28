@@ -1,13 +1,12 @@
 "use client"
 
 import Link from 'next/link'
-import { BarChart3, MessageSquare, Settings, Cpu, Menu, X, Package, ShoppingCart } from 'lucide-react'
-import { cn } from '@/lib/utils'
-import { useState } from 'react'
+import { BarChart3, MessageSquare, Settings, Cpu, Menu, X, Package, ShoppingCart, Users } from 'lucide-react'
 
 const navigation = [
   { name: 'Mission Control', href: '/dashboard', icon: BarChart3 },
   { name: 'Communications', href: '/dashboard/chats', icon: MessageSquare },
+  { name: 'Leads', href: '/dashboard/leads', icon: Users },
   { name: 'Orders', href: '/dashboard/orders', icon: ShoppingCart },
   { name: 'Service Packages', href: '/dashboard/services', icon: Package },
   { name: 'Config', href: '/dashboard/configs', icon: Settings },

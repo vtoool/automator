@@ -75,6 +75,43 @@ const tools = [
         required: ["customer_name", "reason", "last_message"]
       }
     }
+  },
+  {
+    type: "function" as const,
+    function: {
+      name: "update_lead_profile",
+      description: "Update the CRM/lead profile with information gathered during the conversation. Use this to remember user details like name, email, phone, interested service, objections, or status changes. This helps maintain context across conversations.",
+      parameters: {
+        type: "object",
+        properties: {
+          name: {
+            type: "string",
+            description: "The user's full name if provided"
+          },
+          email: {
+            type: "string",
+            description: "The user's email address if provided"
+          },
+          phone: {
+            type: "string",
+            description: "The user's phone number if provided"
+          },
+          interestedService: {
+            type: "string",
+            description: "The service/package the user is interested in (e.g., 'AI Pro Closer', 'Basic Website Package')"
+          },
+          objection: {
+            type: "string",
+            description: "Any objection or concern the user has expressed (e.g., 'Needs to consult team', 'Too expensive')"
+          },
+          status: {
+            type: "string",
+            description: "Lead status: 'Lead' (default), 'Thinking' (considering), 'Closed' (won), 'Lost' (declined)"
+          }
+        },
+        required: []
+      }
+    }
   }
 ];
 
@@ -131,6 +168,87 @@ async function validateServiceExists(serviceName: string): Promise<{ valid: bool
   const matchedService = data.find(s => s.name.toLowerCase() === serviceNameLower);
   console.log(`✅ Service validated: "${matchedService?.name}"`);
   return { valid: true };
+}
+
+async function getLeadMemory(pageId: string, senderId: string): Promise<string> {
+  const supabase = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  );
+
+  const { data, error } = await supabase
+    .from('leads')
+    .select('*')
+    .eq('page_id', pageId)
+    .eq('sender_id', senderId)
+    .single();
+
+  if (error || !data) {
+    console.log('📝 No existing lead memory found');
+    return '';
+  }
+
+  console.log('📝 Found existing lead memory:', data);
+
+  const memoryParts = [];
+  if (data.name) memoryParts.push(`Known name: ${data.name}`);
+  if (data.email) memoryParts.push(`Email: ${data.email}`);
+  if (data.phone) memoryParts.push(`Phone: ${data.phone}`);
+  if (data.interested_service) memoryParts.push(`Interested in: ${data.interested_service}`);
+  if (data.objection) memoryParts.push(`Previous objection: ${data.objection}`);
+  if (data.status && data.status !== 'Lead') memoryParts.push(`Status: ${data.status}`);
+  if (data.last_interaction) memoryParts.push(`Last contact: ${new Date(data.last_interaction).toLocaleDateString()}`);
+
+  if (memoryParts.length === 0) return '';
+
+  return `\n\n[MEMORY: ${memoryParts.join('. ')}. Do not ask for this information again if you already have it.]`;
+}
+
+async function updateLeadProfile(params: {
+  pageId: string;
+  senderId: string;
+  name?: string;
+  email?: string;
+  phone?: string;
+  interestedService?: string;
+  objection?: string;
+  status?: string;
+}) {
+  const supabase = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  );
+
+  const updateData: Record<string, any> = {
+    last_interaction: new Date().toISOString(),
+  };
+
+  if (params.name !== undefined) updateData.name = params.name;
+  if (params.email !== undefined) updateData.email = params.email;
+  if (params.phone !== undefined) updateData.phone = params.phone;
+  if (params.interestedService !== undefined) updateData.interested_service = params.interestedService;
+  if (params.objection !== undefined) updateData.objection = params.objection;
+  if (params.status !== undefined) updateData.status = params.status;
+
+  const { data, error } = await supabase
+    .from('leads')
+    .upsert({
+      page_id: params.pageId,
+      sender_id: params.senderId,
+      ...updateData,
+    }, {
+      onConflict: 'page_id,sender_id'
+    })
+    .select()
+    .single();
+
+  if (error) {
+    console.error('❌ Error updating lead profile:', error);
+    return { success: false, error: error.message };
+  }
+
+  console.log('✅ Lead profile updated:', data);
+  return { success: true, lead: data };
 }
 
 async function executeOrderCreation(params: {
@@ -246,10 +364,12 @@ export async function POST(req: Request) {
       content: m.message_text,
     })) || [];
 
-    const toolInstruction = "\n\nIMPORTANT: When the user asks about pricing, packages, services, or pricing information, you MUST use the get_active_services tool to fetch the current, accurate information from the database. The database contains the most up-to-date and accurate information, which should take priority over any information in the chat history or in your training data. Never make up prices or use information from chat history for pricing questions.\n\nCRITICAL ORDER INSTRUCTIONS: When creating an order with create_order tool, you MUST have already verified the service exists using get_active_services. DO NOT create orders for invalid services (food, physical goods, etc.). After the order is created, the tool will return a portalUrl. You MUST provide the EXACT portalUrl returned by the tool to the user. DO NOT generate fake Calendly links, fake booking links, or any other fake URLs. Only use the exact portalUrl from the tool response.";
+    const leadMemory = await getLeadMemory(pageId, senderId);
+
+    const toolInstruction = "\n\nIMPORTANT: When the user asks about pricing, packages, services, or pricing information, you MUST use the get_active_services tool to fetch the current, accurate information from the database. The database contains the most up-to-date and accurate information, which should take priority over any information in the chat history or in your training data. Never make up prices or use information from chat history for pricing questions.\n\nCRITICAL ORDER INSTRUCTIONS: When creating an order with create_order tool, you MUST have already verified the service exists using get_active_services. DO NOT create orders for invalid services (food, physical goods, etc.). After the order is created, the tool will return a portalUrl. You MUST provide the EXACT portalUrl returned by the tool to the user. DO NOT generate fake Calendly links, fake booking links, or any other fake URLs. Only use the exact portalUrl from the tool response.\n\nCRM INSTRUCTIONS: Use the update_lead_profile tool to save important information about the user (name, email, phone, interested service, objections, status). This helps maintain context across conversations and enables follow-ups.";
     const systemMessage = { 
       role: "system" as const, 
-      content: config.system_prompt + toolInstruction 
+      content: config.system_prompt + leadMemory + toolInstruction 
     };
     const userMsg = { role: "user" as const, content: userMessage };
 
@@ -328,6 +448,24 @@ export async function POST(req: Request) {
             toolResult = JSON.stringify(interventionResult);
             aiAction = "pause";
             console.log("🚨 AI action set to pause for human handoff");
+          }
+          else if (toolCall.function.name === "update_lead_profile") {
+            const args = JSON.parse(toolCall.function.arguments);
+            console.log("📝 Lead profile update params:", args);
+            
+            const leadResult = await updateLeadProfile({
+              pageId,
+              senderId,
+              name: args.name,
+              email: args.email,
+              phone: args.phone,
+              interestedService: args.interestedService,
+              objection: args.objection,
+              status: args.status,
+            });
+
+            console.log("✅ Lead profile result:", leadResult);
+            toolResult = JSON.stringify(leadResult);
           } else {
             console.log("⚠️ Unknown tool:", toolCall.function.name);
             toolResult = JSON.stringify({ error: `Unknown tool: ${toolCall.function.name}` });
