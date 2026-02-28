@@ -253,138 +253,101 @@ export async function POST(req: Request) {
     };
     const userMsg = { role: "user" as const, content: userMessage };
 
-    console.log("🤖 Sending to Groq with tools...");
+    console.log("🤖 Starting tool calling loop...");
 
-    const completion = await groq.chat.completions.create({
-      messages: [systemMessage, ...chatHistory, userMsg],
-      model: "openai/gpt-oss-120b",
-      temperature: 0.4,
-      tools,
-    });
+    let messages = [systemMessage, ...chatHistory, userMsg];
+    let maxIterations = 10;
+    let iteration = 0;
 
-    console.log("📤 Groq response:", JSON.stringify(completion.choices[0]?.message));
+    while (iteration < maxIterations) {
+      iteration++;
+      console.log(`🔄 Iteration ${iteration}/${maxIterations}`);
 
-    if (completion.choices[0]?.message?.tool_calls && completion.choices[0].message.tool_calls.length > 0) {
-      const toolCall = completion.choices[0].message.tool_calls[0];
-      console.log("🔧 Tool call detected:", toolCall.function.name);
+      const completion = await groq.chat.completions.create({
+        messages,
+        model: "openai/gpt-oss-120b",
+        temperature: 0.4,
+        tools,
+        tool_choice: "auto",
+      });
 
-      if (toolCall.function.name === "get_active_services") {
-        console.log("🔧 Executing get_active_services...");
-        const services = await fetchServicesFromDB();
-        console.log("📦 Services fetched from DB:", JSON.stringify(services));
+      console.log("📤 Groq response:", JSON.stringify(completion.choices[0]?.message));
 
-        const secondCompletion = await groq.chat.completions.create({
-          messages: [
-            systemMessage,
-            ...chatHistory,
-            userMsg,
-            completion.choices[0].message,
-            {
-              role: "tool" as const,
-              tool_call_id: toolCall.id,
-              content: JSON.stringify(services)
-            }
-          ],
-          model: "openai/gpt-oss-120b",
-          temperature: 0.4,
+      const assistantMessage = completion.choices[0]?.message;
+      
+      if (!assistantMessage?.tool_calls || assistantMessage.tool_calls.length === 0) {
+        console.log("✅ No tool calls - final response received");
+        finalAiReply = assistantMessage?.content || "One moment...";
+        console.log("✅ finalAiReply set:", finalAiReply);
+        break;
+      }
+
+      console.log(`🔧 ${assistantMessage.tool_calls.length} tool call(s) detected`);
+      messages.push(assistantMessage);
+
+      for (const toolCall of assistantMessage.tool_calls) {
+        console.log("🔧 Executing tool:", toolCall.function.name);
+
+        let toolResult;
+        
+        try {
+          if (toolCall.function.name === "get_active_services") {
+            const services = await fetchServicesFromDB();
+            console.log("📦 Services fetched from DB:", JSON.stringify(services));
+            toolResult = JSON.stringify(services);
+          } 
+          else if (toolCall.function.name === "create_order") {
+            const args = JSON.parse(toolCall.function.arguments);
+            console.log("📝 Order params:", args);
+            
+            const orderResult = await executeOrderCreation({
+              clientName: args.clientName || userName || senderId,
+              clientContact: args.clientContact || senderId,
+              serviceName: args.serviceName,
+              agreedPrice: args.agreedPrice,
+            });
+
+            console.log("✅ Order result:", orderResult);
+            toolResult = JSON.stringify(orderResult);
+          }
+          else if (toolCall.function.name === "request_human_intervention") {
+            const args = JSON.parse(toolCall.function.arguments);
+            console.log("📝 Human intervention params:", args);
+            
+            const inboxLink = `https://www.facebook.com/messages/t/${pageId}/${senderId}`;
+            const interventionMessage = `🚨 **HUMAN INTERVENTION REQUIRED** 🚨\n\n**Customer:** ${userName}\n**ID:** ${senderId}\n**Reason:** ${args.reason}\n**Last Message:** "${args.last_message}"\n\n🔗 Inbox: ${inboxLink}`;
+            
+            await sendTelegramNotification(interventionMessage);
+            console.log("✅ Human intervention ping sent to Telegram");
+            
+            const interventionResult = {
+              success: true,
+              message: "Human manager has been notified and will review your request shortly."
+            };
+            
+            toolResult = JSON.stringify(interventionResult);
+            aiAction = "pause";
+            console.log("🚨 AI action set to pause for human handoff");
+          } else {
+            console.log("⚠️ Unknown tool:", toolCall.function.name);
+            toolResult = JSON.stringify({ error: `Unknown tool: ${toolCall.function.name}` });
+          }
+        } catch (err) {
+          console.error("❌ Error executing tool:", err);
+          toolResult = JSON.stringify({ error: err instanceof Error ? err.message : 'Unknown error' });
+        }
+
+        messages.push({
+          role: "tool" as const,
+          tool_call_id: toolCall.id,
+          content: toolResult,
         });
-
-        console.log("📤 Second Groq response:", JSON.stringify(secondCompletion.choices[0]?.message));
-        finalAiReply = secondCompletion.choices[0]?.message?.content || "One moment...";
-        console.log("✅ finalAiReply set from get_active_services:", finalAiReply);
-      } 
-      else if (toolCall.function.name === "create_order") {
-        console.log("🔧 Executing create_order...");
-        
-        try {
-          const args = JSON.parse(toolCall.function.arguments);
-          console.log("📝 Order params:", args);
-          
-          const orderResult = await executeOrderCreation({
-            clientName: args.clientName || userName || senderId,
-            clientContact: args.clientContact || senderId,
-            serviceName: args.serviceName,
-            agreedPrice: args.agreedPrice,
-          });
-
-          console.log("✅ Order result:", orderResult);
-
-          const secondCompletion = await groq.chat.completions.create({
-            messages: [
-              systemMessage,
-              ...chatHistory,
-              userMsg,
-              completion.choices[0].message,
-              {
-                role: "tool" as const,
-                tool_call_id: toolCall.id,
-                content: JSON.stringify(orderResult)
-              }
-            ],
-            model: "openai/gpt-oss-120b",
-            temperature: 0.4,
-          });
-
-          finalAiReply = secondCompletion.choices[0]?.message?.content || "One moment...";
-          console.log("✅ finalAiReply set from create_order:", finalAiReply);
-        } catch (err) {
-          console.error("❌ Error executing order:", err);
-          finalAiReply = "I apologize, but there was an issue creating your order. Please try again or contact support.";
-          console.log("✅ finalAiReply set from create_order error:", finalAiReply);
-        }
       }
-      else if (toolCall.function.name === "request_human_intervention") {
-        console.log("🔧 Executing request_human_intervention...");
-        
-        try {
-          const args = JSON.parse(toolCall.function.arguments);
-          console.log("📝 Human intervention params:", args);
-          
-          const inboxLink = `https://www.facebook.com/messages/t/${pageId}/${senderId}`;
-          const interventionMessage = `🚨 **HUMAN INTERVENTION REQUIRED** 🚨\n\n**Customer:** ${userName}\n**ID:** ${senderId}\n**Reason:** ${args.reason}\n**Last Message:** "${args.last_message}"\n\n🔗 Inbox: ${inboxLink}`;
-          
-          await sendTelegramNotification(interventionMessage);
-          console.log("✅ Human intervention ping sent to Telegram");
-          
-          const interventionResult = {
-            success: true,
-            message: "Human manager has been notified and will review your request shortly."
-          };
+    }
 
-          const secondCompletion = await groq.chat.completions.create({
-            messages: [
-              systemMessage,
-              ...chatHistory,
-              userMsg,
-              completion.choices[0].message,
-              {
-                role: "tool" as const,
-                tool_call_id: toolCall.id,
-                content: JSON.stringify(interventionResult)
-              }
-            ],
-            model: "openai/gpt-oss-120b",
-            temperature: 0.4,
-          });
-
-          finalAiReply = secondCompletion.choices[0]?.message?.content || "I've just pinged our team, and someone will review this and reply shortly!";
-          console.log("✅ finalAiReply set from request_human_intervention:", finalAiReply);
-          aiAction = "pause";
-          console.log("🚨 AI action set to pause for human handoff");
-        } catch (err) {
-          console.error("❌ Error requesting human intervention:", err);
-          finalAiReply = "I apologize, but there was an issue connecting you with our team. Please try again or contact support directly.";
-          console.log("✅ finalAiReply set from request_human_intervention error:", finalAiReply);
-        }
-      } else {
-        console.log("⚠️ Unknown tool:", toolCall.function.name);
-        finalAiReply = "I apologize, but I encountered an unexpected issue. Please try again.";
-        console.log("✅ finalAiReply set from unknown tool:", finalAiReply);
-      }
-    } else {
-      console.log("⚠️ No tool call detected - model answered without using tools");
-      finalAiReply = completion.choices[0]?.message?.content || "One moment...";
-      console.log("✅ finalAiReply set from no tool:", finalAiReply);
+    if (iteration >= maxIterations) {
+      console.error("❌ ERROR: Max iterations reached - possible infinite loop");
+      finalAiReply = "I apologize, but I encountered an issue processing your request. Please try again.";
     }
 
     if (!finalAiReply || finalAiReply.trim() === "") {
