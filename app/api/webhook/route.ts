@@ -257,7 +257,7 @@ export async function POST(req: Request) {
 
     const completion = await groq.chat.completions.create({
       messages: [systemMessage, ...chatHistory, userMsg],
-      model: "openai/gpt-oss-20b",
+      model: "openai/gpt-oss-120b",
       temperature: 0.4,
       tools,
     });
@@ -285,7 +285,7 @@ export async function POST(req: Request) {
               content: JSON.stringify(services)
             }
           ],
-          model: "openai/gpt-oss-20b",
+          model: "openai/gpt-oss-120b",
           temperature: 0.4,
         });
 
@@ -321,7 +321,7 @@ export async function POST(req: Request) {
                 content: JSON.stringify(orderResult)
               }
             ],
-            model: "openai/gpt-oss-20b",
+            model: "openai/gpt-oss-120b",
             temperature: 0.4,
           });
 
@@ -363,7 +363,7 @@ export async function POST(req: Request) {
                 content: JSON.stringify(interventionResult)
               }
             ],
-            model: "openai/gpt-oss-20b",
+            model: "openai/gpt-oss-120b",
             temperature: 0.4,
           });
 
