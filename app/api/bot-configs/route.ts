@@ -21,6 +21,36 @@ export async function GET() {
   }
 }
 
+export async function PATCH(request: NextRequest) {
+  try {
+    const body = await request.json();
+    const { page_id, system_prompt } = body;
+
+    if (!page_id) {
+      return NextResponse.json({ error: 'page_id is required' }, { status: 400 });
+    }
+
+    const updateData: any = {};
+    if (system_prompt !== undefined) updateData.system_prompt = system_prompt;
+
+    const { data, error } = await supabase
+      .from('bot_configs')
+      .update(updateData)
+      .eq('page_id', page_id)
+      .select()
+      .single();
+
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
+    return NextResponse.json({ config: data });
+  } catch (error) {
+    console.error('Bot Config Patch Error:', error);
+    return NextResponse.json({ error: 'Failed to patch bot config' }, { status: 500 });
+  }
+}
+
 export async function PUT(request: NextRequest) {
   try {
     const body = await request.json();

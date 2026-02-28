@@ -5,9 +5,8 @@ import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Button } from '@/components/ui/button'
-import { Switch } from '@/components/ui/switch'
 import { Badge } from '@/components/ui/badge'
-import { Loader2, Save, Power, Trash2, Plus, Server, Key, Brain, CheckCircle2, XCircle } from 'lucide-react'
+import { Loader2, Save, Plus, Server, Key, Brain, CheckCircle2, XCircle, ChevronDown, Check } from 'lucide-react'
 
 interface BotConfig {
   id: number
@@ -22,10 +21,11 @@ interface BotConfig {
 export default function ConfigsPage() {
   const [configs, setConfigs] = useState<BotConfig[]>([])
   const [loading, setLoading] = useState(true)
-  const [saving, setSaving] = useState<number | null>(null)
-  const [editMode, setEditMode] = useState<number | null>(null)
-  const [formData, setFormData] = useState<Record<number, Partial<BotConfig>>>({})
-  const [deleteConfirm, setDeleteConfirm] = useState<number | null>(null)
+  const [saving, setSaving] = useState(false)
+  const [selectedBot, setSelectedBot] = useState<BotConfig | null>(null)
+  const [editPrompt, setEditPrompt] = useState('')
+  const [showSuccess, setShowSuccess] = useState(false)
+  const [dropdownOpen, setDropdownOpen] = useState(false)
 
   useEffect(() => {
     fetchConfigs()
@@ -35,7 +35,12 @@ export default function ConfigsPage() {
     try {
       const res = await fetch('/api/bot-configs')
       const data = await res.json()
-      setConfigs(data.configs || [])
+      const configList = data.configs || []
+      setConfigs(configList)
+      if (configList.length > 0 && !selectedBot) {
+        setSelectedBot(configList[0])
+        setEditPrompt(configList[0].system_prompt || '')
+      }
       setLoading(false)
     } catch (error) {
       console.error('Failed to fetch configs:', error)
@@ -43,61 +48,36 @@ export default function ConfigsPage() {
     }
   }
 
-  const handleEdit = (config: BotConfig) => {
-    setEditMode(config.id)
-    setFormData(prev => ({
-      ...prev,
-      [config.id]: {
-        page_name: config.page_name,
-        system_prompt: config.system_prompt,
-        access_token: config.access_token,
-        is_active: config.is_active,
-      }
-    }))
-  }
-
-  const handleSave = async (id: number) => {
-    setSaving(id)
+  const handleSave = async () => {
+    if (!selectedBot) return
+    
+    setSaving(true)
     try {
       const res = await fetch('/api/bot-configs', {
-        method: 'PUT',
+        method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          id,
-          ...formData[id],
+          page_id: selectedBot.page_id,
+          system_prompt: editPrompt,
         }),
       })
       
       if (res.ok) {
         await fetchConfigs()
-        setEditMode(null)
+        setSelectedBot(prev => prev ? { ...prev, system_prompt: editPrompt } : null)
+        setShowSuccess(true)
+        setTimeout(() => setShowSuccess(false), 3000)
       }
     } catch (error) {
       console.error('Failed to save config:', error)
     }
-    setSaving(null)
+    setSaving(false)
   }
 
-  const handleCancel = () => {
-    setEditMode(null)
-    setFormData({})
-    setDeleteConfirm(null)
-  }
-
-  const toggleActive = async (config: BotConfig) => {
-    try {
-      await fetch('/api/bot-configs', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          id: config.id,
-          is_active: !config.is_active,
-        }),
-      })
-      await fetchConfigs()
-    } catch (error) {
-      console.error('Failed to toggle active:', error)
-    }
+  const selectBot = (config: BotConfig) => {
+    setSelectedBot(config)
+    setEditPrompt(config.system_prompt || '')
+    setDropdownOpen(false)
   }
 
   return (
@@ -106,13 +86,17 @@ export default function ConfigsPage() {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold font-mono">Neural Networks</h1>
-          <p className="text-[var(--text-secondary)] text-sm">Configure your AI agents</p>
+          <p className="text-[var(--text-secondary)] text-sm">Configure your AI agents system prompts</p>
         </div>
-        <Button className="bg-[var(--accent-cyan)] text-black hover:shadow-[var(--glow-cyan)] transition-all font-semibold">
-          <Plus className="h-4 w-4 mr-2" />
-          Add New Agent
-        </Button>
       </div>
+
+      {/* Success Toast */}
+      {showSuccess && (
+        <div className="fixed top-4 right-4 z-50 bg-[var(--accent-lime)] text-black px-4 py-3 rounded-lg shadow-lg flex items-center gap-2 animate-in fade-in slide-in-from-top-2">
+          <Check className="h-4 w-4" />
+          <span className="font-medium">System prompt saved successfully!</span>
+        </div>
+      )}
 
       {loading ? (
         <div className="flex items-center justify-center py-20">
@@ -122,159 +106,119 @@ export default function ConfigsPage() {
         <Card className="bg-[var(--bg-surface)] border-[var(--border-subtle)] p-12 text-center">
           <Server className="h-16 w-16 mx-auto mb-4 text-[var(--text-tertiary)]" />
           <h3 className="text-lg font-semibold mb-2">No AI Agents Configured</h3>
-          <p className="text-[var(--text-secondary)] mb-6">Add your first bot configuration to get started</p>
-          <Button className="bg-[var(--accent-cyan)] text-black hover:shadow-[var(--glow-cyan)]">
-            <Plus className="h-4 w-4 mr-2" />
-            Add New Agent
-          </Button>
+          <p className="text-[var(--text-secondary)]">Add your first bot configuration to get started</p>
         </Card>
       ) : (
-        <div className="grid gap-6">
-          {configs.map((config) => (
-            <Card 
-              key={config.id} 
-              className={`bg-[var(--bg-surface)] border-[var(--border-subtle)] overflow-hidden transition-all duration-200 ${
-                editMode === config.id ? 'ring-2 ring-[var(--accent-cyan)]' : ''
-              }`}
-            >
+        <div className="space-y-6">
+          {/* Bot Selector Dropdown */}
+          {configs.length > 1 && (
+            <div className="relative">
+              <label className="text-sm font-medium text-[var(--text-secondary)] mb-2 block">Select Bot</label>
+              <button
+                onClick={() => setDropdownOpen(!dropdownOpen)}
+                className="w-full md:w-80 flex items-center justify-between px-4 py-3 bg-[var(--bg-surface)] border border-[var(--border-subtle)] rounded-lg hover:border-[var(--accent-cyan)] transition-colors"
+              >
+                <div className="flex items-center gap-3">
+                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${
+                    selectedBot?.is_active ? 'bg-[var(--accent-cyan)]/10' : 'bg-[var(--bg-elevated)]'
+                  }`}>
+                    <Brain className={`h-4 w-4 ${selectedBot?.is_active ? 'text-[var(--accent-cyan)]' : 'text-[var(--text-tertiary)]'}`} />
+                  </div>
+                  <span className="font-medium">{selectedBot?.page_name || selectedBot?.page_id}</span>
+                </div>
+                <ChevronDown className={`h-4 w-4 text-[var(--text-tertiary)] transition-transform ${dropdownOpen ? 'rotate-180' : ''}`} />
+              </button>
+              
+              {dropdownOpen && (
+                <div className="absolute top-full left-0 w-full md:w-80 mt-2 bg-[var(--bg-surface)] border border-[var(--border-subtle)] rounded-lg shadow-xl z-10 overflow-hidden">
+                  {configs.map((config) => (
+                    <button
+                      key={config.id}
+                      onClick={() => selectBot(config)}
+                      className={`w-full flex items-center gap-3 px-4 py-3 hover:bg-[var(--bg-elevated)] transition-colors ${
+                        selectedBot?.id === config.id ? 'bg-[var(--accent-cyan)]/10' : ''
+                      }`}
+                    >
+                      <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${
+                        config.is_active ? 'bg-[var(--accent-cyan)]/10' : 'bg-[var(--bg-elevated)]'
+                      }`}>
+                        <Brain className={`h-4 w-4 ${config.is_active ? 'text-[var(--accent-cyan)]' : 'text-[var(--text-tertiary)]'}`} />
+                      </div>
+                      <div className="flex-1 text-left">
+                        <span className="font-medium block">{config.page_name || config.page_id}</span>
+                        <span className="text-xs text-[var(--text-tertiary)] font-mono">{config.page_id}</span>
+                      </div>
+                      {config.is_active && (
+                        <Badge variant="success" className="text-xs">
+                          <CheckCircle2 className="h-3 w-3 mr-1" />
+                          Active
+                        </Badge>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Selected Bot Card */}
+          {selectedBot && (
+            <Card className="bg-[var(--bg-surface)] border-[var(--border-subtle)] overflow-hidden">
               {/* Card Header */}
               <div className="p-6 pb-4 border-b border-[var(--border-subtle)] flex items-center justify-between">
                 <div className="flex items-center gap-4">
                   <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${
-                    config.is_active ? 'bg-[var(--accent-cyan)]/10' : 'bg-[var(--bg-elevated)]'
+                    selectedBot.is_active ? 'bg-[var(--accent-cyan)]/10' : 'bg-[var(--bg-elevated)]'
                   }`}>
-                    <Brain className={`h-6 w-6 ${config.is_active ? 'text-[var(--accent-cyan)]' : 'text-[var(--text-tertiary)]'}`} />
+                    <Brain className={`h-6 w-6 ${selectedBot.is_active ? 'text-[var(--accent-cyan)]' : 'text-[var(--text-tertiary)]'}`} />
                   </div>
                   <div>
                     <div className="flex items-center gap-3">
-                      <h3 className="text-lg font-semibold">
-                        {editMode === config.id ? (
-                          <Input
-                            value={formData[config.id]?.page_name || ''}
-                            onChange={(e) => setFormData(prev => ({
-                              ...prev,
-                              [config.id]: { ...prev[config.id], page_name: e.target.value }
-                            }))}
-                            className="h-8 w-64 bg-[var(--bg-elevated)]"
-                          />
+                      <h3 className="text-lg font-semibold">{selectedBot.page_name || selectedBot.page_id}</h3>
+                      <Badge variant={selectedBot.is_active ? 'success' : 'default'}>
+                        {selectedBot.is_active ? (
+                          <><CheckCircle2 className="h-3 w-3 mr-1" /> Active</>
                         ) : (
-                          config.page_name || config.page_id
+                          <><XCircle className="h-3 w-3 mr-1" /> Inactive</>
                         )}
-                      </h3>
-                      {editMode !== config.id && (
-                        <Badge variant={config.is_active ? 'success' : 'default'}>
-                          {config.is_active ? (
-                            <><CheckCircle2 className="h-3 w-3 mr-1" /> Active</>
-                          ) : (
-                            <><XCircle className="h-3 w-3 mr-1" /> Inactive</>
-                          )}
-                        </Badge>
-                      )}
+                      </Badge>
                     </div>
-                    <p className="text-xs text-[var(--text-tertiary)] font-mono mt-1">{config.page_id}</p>
+                    <p className="text-xs text-[var(--text-tertiary)] font-mono mt-1">{selectedBot.page_id}</p>
                   </div>
                 </div>
-                <div className="flex items-center gap-2">
-                  {editMode === config.id ? (
-                    <>
-                      <Button
-                        size="sm"
-                        onClick={() => handleSave(config.id)}
-                        disabled={saving === config.id}
-                        className="bg-[var(--accent-cyan)] text-black hover:shadow-[var(--glow-cyan)]"
-                      >
-                        {saving === config.id ? (
-                          <Loader2 className="h-4 w-4 animate-spin" />
-                        ) : (
-                          <Save className="h-4 w-4 mr-1" />
-                        )}
-                        Save
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={handleCancel}
-                      >
-                        Cancel
-                      </Button>
-                    </>
+                <Button
+                  onClick={handleSave}
+                  disabled={saving}
+                  className="bg-[var(--accent-cyan)] text-black hover:shadow-[var(--glow-cyan)]"
+                >
+                  {saving ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
                   ) : (
-                    <>
-                      <button
-                        onClick={() => toggleActive(config)}
-                        className={`p-2 rounded-lg transition-colors ${
-                          config.is_active 
-                            ? 'text-[var(--accent-lime)] hover:bg-[var(--accent-lime)]/10' 
-                            : 'text-[var(--text-tertiary)] hover:bg-[var(--bg-elevated)]'
-                        }`}
-                        title={config.is_active ? 'Deactivate' : 'Activate'}
-                      >
-                        <Power className="h-5 w-5" />
-                      </button>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => handleEdit(config)}
-                      >
-                        Configure
-                      </Button>
-                    </>
+                    <Save className="h-4 w-4 mr-2" />
                   )}
-                </div>
+                  Save Changes
+                </Button>
               </div>
               
-              {/* Card Body */}
-              <div className="p-6 space-y-6">
-                <div>
-                  <label className="flex items-center gap-2 text-sm font-medium text-[var(--text-secondary)] mb-3">
-                    <Brain className="h-4 w-4" />
-                    System Prompt
-                  </label>
-                  {editMode === config.id ? (
-                    <Textarea
-                      value={formData[config.id]?.system_prompt || ''}
-                      onChange={(e) => setFormData(prev => ({
-                        ...prev,
-                        [config.id]: { ...prev[config.id], system_prompt: e.target.value }
-                      }))}
-                      rows={6}
-                      className="bg-[var(--bg-elevated)] border-[var(--border-subtle)] font-mono text-sm"
-                      placeholder="Enter system prompt..."
-                    />
-                  ) : (
-                    <div className="bg-[var(--bg-elevated)] rounded-lg p-4 text-sm text-[var(--text-secondary)] max-h-32 overflow-auto font-mono">
-                      {config.system_prompt || <span className="italic text-[var(--text-tertiary)]">No prompt configured</span>}
-                    </div>
-                  )}
-                </div>
-                <div>
-                  <label className="flex items-center gap-2 text-sm font-medium text-[var(--text-secondary)] mb-3">
-                    <Key className="h-4 w-4" />
-                    Access Token
-                  </label>
-                  {editMode === config.id ? (
-                    <Input
-                      value={formData[config.id]?.access_token || ''}
-                      onChange={(e) => setFormData(prev => ({
-                        ...prev,
-                        [config.id]: { ...prev[config.id], access_token: e.target.value }
-                      }))}
-                      type="password"
-                      className="bg-[var(--bg-elevated)] border-[var(--border-subtle)] font-mono"
-                      placeholder="Enter access token..."
-                    />
-                  ) : (
-                    <Input
-                      value={config.access_token ? '••••••••••••••••••••••••' : ''}
-                      disabled
-                      type="password"
-                      className="bg-[var(--bg-elevated)] border-[var(--border-subtle)] text-[var(--text-tertiary)] font-mono"
-                    />
-                  )}
-                </div>
+              {/* System Prompt Editor */}
+              <div className="p-6">
+                <label className="flex items-center gap-2 text-sm font-medium text-[var(--text-secondary)] mb-3">
+                  <Brain className="h-4 w-4" />
+                  System Prompt
+                </label>
+                <Textarea
+                  value={editPrompt}
+                  onChange={(e) => setEditPrompt(e.target.value)}
+                  rows={25}
+                  className="bg-[var(--bg-elevated)] border-[var(--border-subtle)] font-mono text-sm min-h-[500px]"
+                  placeholder="Enter system prompt..."
+                />
+                <p className="text-xs text-[var(--text-tertiary)] mt-2">
+                  Use monospaced font for easier editing of strict markdown rules
+                </p>
               </div>
             </Card>
-          ))}
+          )}
         </div>
       )}
     </div>
