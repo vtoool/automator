@@ -5,19 +5,24 @@ const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env
 
 export async function GET() {
   try {
+    console.log('🔍 Fetching bot_configs...');
+    console.log('🔍 SUPABASE_URL:', process.env.NEXT_PUBLIC_SUPABASE_URL ? 'set' : 'MISSING');
+    
     const { data, error } = await supabase
       .from('bot_configs')
       .select('*')
       .order('created_at', { ascending: false });
 
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
+      console.error('❌ Supabase error:', error);
+      return NextResponse.json({ error: error.message, details: error }, { status: 500 });
     }
 
+    console.log('✅ Fetched configs:', data?.length || 0);
     return NextResponse.json({ configs: data });
   } catch (error) {
-    console.error('Bot Configs Error:', error);
-    return NextResponse.json({ error: 'Failed to fetch bot configs' }, { status: 500 });
+    console.error('❌ Bot Configs Error:', error);
+    return NextResponse.json({ error: 'Failed to fetch bot configs', details: error instanceof Error ? error.message : String(error) }, { status: 500 });
   }
 }
 
