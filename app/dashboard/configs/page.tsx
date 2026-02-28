@@ -85,7 +85,7 @@ export default function ConfigsPage() {
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold font-mono">Neural Networks</h1>
+          <h1 className="text-2xl font-bold font-mono">Config</h1>
           <p className="text-[var(--text-secondary)] text-sm">Configure your AI agents system prompts</p>
         </div>
       </div>

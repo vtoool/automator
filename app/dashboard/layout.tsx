@@ -10,7 +10,7 @@ const navigation = [
   { name: 'Communications', href: '/dashboard/chats', icon: MessageSquare },
   { name: 'Orders', href: '/dashboard/orders', icon: ShoppingCart },
   { name: 'Service Packages', href: '/dashboard/services', icon: Package },
-  { name: 'Neural Networks', href: '/dashboard/configs', icon: Settings },
+  { name: 'Config', href: '/dashboard/configs', icon: Settings },
 ]
 
 export default function DashboardLayout({
