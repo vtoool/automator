@@ -147,6 +147,7 @@ const API_BASE = '/api/video'
 export default function PlaygroundPage() {
   const [apiKey, setApiKey] = useState('')
   const [apiKeyExpanded, setApiKeyExpanded] = useState(true)
+  const [apiKeySaved, setApiKeySaved] = useState(false)
   const [selectedModel, setSelectedModel] = useState<ModelConfig>(MODELS[0])
   const [isClient, setIsClient] = useState(false)
   const [prompt, setPrompt] = useState('')
@@ -173,6 +174,7 @@ export default function PlaygroundPage() {
     const savedKey = localStorage.getItem('zai_api_key')
     if (savedKey) {
       setApiKey(savedKey)
+      setApiKeySaved(true)
       setApiKeyExpanded(false)
     }
   }, [])
@@ -194,6 +196,7 @@ export default function PlaygroundPage() {
   const saveApiKey = () => {
     if (apiKey.trim()) {
       localStorage.setItem('zai_api_key', apiKey.trim())
+      setApiKeySaved(true)
       setApiKeyExpanded(false)
     }
   }
@@ -201,6 +204,7 @@ export default function PlaygroundPage() {
   const clearApiKey = () => {
     localStorage.removeItem('zai_api_key')
     setApiKey('')
+    setApiKeySaved(false)
     setApiKeyExpanded(true)
   }
 
@@ -432,7 +436,7 @@ export default function PlaygroundPage() {
           <div className="flex items-center gap-3">
             <Key className="h-5 w-5 text-[var(--accent-cyan)]" />
             <span className="font-medium">API Key</span>
-            {apiKey && <Badge className="bg-[var(--accent-lime)]/20 text-[var(--accent-lime)]">Saved</Badge>}
+            {apiKeySaved && <Badge className="bg-[var(--accent-lime)]/20 text-[var(--accent-lime)]">Saved</Badge>}
           </div>
           {apiKeyExpanded ? <ChevronUp className="h-5 w-5" /> : <ChevronDown className="h-5 w-5" />}
         </button>
@@ -443,14 +447,27 @@ export default function PlaygroundPage() {
               <Input
                 type="password"
                 value={apiKey}
-                onChange={(e) => setApiKey(e.target.value)}
+                onChange={(e) => {
+                  setApiKey(e.target.value)
+                  setApiKeySaved(false)
+                }}
+                onBlur={() => {
+                  if (apiKey.trim()) {
+                    saveApiKey()
+                  }
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && apiKey.trim()) {
+                    saveApiKey()
+                  }
+                }}
                 placeholder="Enter your Z.ai API key"
                 className="flex-1"
               />
-              {apiKey ? (
+              {apiKeySaved ? (
                 <Button variant="outline" onClick={clearApiKey}>Clear</Button>
               ) : (
-                <Button onClick={saveApiKey}>Save</Button>
+                <Button onClick={saveApiKey} disabled={!apiKey.trim()}>Save</Button>
               )}
             </div>
             <p className="text-xs text-[var(--text-tertiary)] mt-2">
