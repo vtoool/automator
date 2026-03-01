@@ -316,12 +316,19 @@ export default function PlaygroundPage() {
 
       const data = await response.json()
 
+      console.log('API Response:', response.status, data)
+
       if (response.status === 429) {
-        throw new Error('Rate limit exceeded. Please wait a moment and try again.')
+        throw new Error('Rate limit exceeded. Please wait 1-2 minutes and try again.')
       }
 
       if (!response.ok || data.error) {
-        throw new Error(data.error?.message || data.message || `Request failed (${response.status})`)
+        const errorMsg = data.error?.message || data.message || JSON.stringify(data)
+        throw new Error(`API Error (${response.status}): ${errorMsg}`)
+      }
+
+      if (!data.id) {
+        throw new Error('No task ID returned. Response: ' + JSON.stringify(data))
       }
 
       setProgressMsg('Video is being generated... (this may take a few minutes)')
@@ -351,6 +358,16 @@ export default function PlaygroundPage() {
           })
         })
 
+        if (response.status === 429) {
+          setProgressMsg('Rate limited - waiting...')
+          return
+        }
+
+        if (!response.ok) {
+          console.error('Status check failed:', response.status)
+          return
+        }
+
         const data = await response.json()
 
         if (data.task_status === 'SUCCESS') {
@@ -368,7 +385,7 @@ export default function PlaygroundPage() {
           }
           setTaskStatus('fail')
           setError(data.fail_reason || 'Video generation failed')
-        } else {
+        } else if (data.task_status === 'PROCESSING') {
           setProgressMsg('Still generating...')
         }
       } catch (err) {
