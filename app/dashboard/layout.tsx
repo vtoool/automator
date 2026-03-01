@@ -1,7 +1,7 @@
 "use client"
 
 import Link from 'next/link'
-import { BarChart3, MessageSquare, Settings, Cpu, Menu, X, Package, ShoppingCart, Users } from 'lucide-react'
+import { BarChart3, MessageSquare, Settings, Cpu, Menu, X, Package, ShoppingCart, Users, Film } from 'lucide-react'
 import { useState } from 'react'
 import { cn } from '@/lib/utils'
 
@@ -11,6 +11,7 @@ const navigation = [
   { name: 'Leads', href: '/dashboard/leads', icon: Users },
   { name: 'Orders', href: '/dashboard/orders', icon: ShoppingCart },
   { name: 'Service Packages', href: '/dashboard/services', icon: Package },
+  { name: 'Playground', href: '/dashboard/playground', icon: Film },
   { name: 'Config', href: '/dashboard/configs', icon: Settings },
 ]
 
