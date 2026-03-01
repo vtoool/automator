@@ -142,7 +142,7 @@ const MODELS: ModelConfig[] = [
   }
 ]
 
-const API_BASE = 'https://api.z.ai/api/paas/v4'
+const API_BASE = '/api/video'
 
 export default function PlaygroundPage() {
   const [apiKey, setApiKey] = useState('')
@@ -302,14 +302,16 @@ export default function PlaygroundPage() {
         }
       }
 
-      const response = await fetch(`${API_BASE}/videos/generations`, {
+      const response = await fetch(API_BASE, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${apiKey.trim()}`,
-          'Accept-Language': 'en-US,en'
         },
-        body: JSON.stringify(requestBody)
+        body: JSON.stringify({
+          apiKey: apiKey.trim(),
+          action: 'generate',
+          body: requestBody
+        })
       })
 
       const data = await response.json()
@@ -318,8 +320,8 @@ export default function PlaygroundPage() {
         throw new Error('Rate limit exceeded. Please wait a moment and try again.')
       }
 
-      if (!response.ok || data.code) {
-        throw new Error(data.message || `Request failed (${response.status})`)
+      if (!response.ok || data.error) {
+        throw new Error(data.error?.message || data.message || `Request failed (${response.status})`)
       }
 
       setProgressMsg('Video is being generated... (this may take a few minutes)')
@@ -337,11 +339,16 @@ export default function PlaygroundPage() {
 
     pollingRef.current = setInterval(async () => {
       try {
-        const response = await fetch(`${API_BASE}/async-result/${id}`, {
+        const response = await fetch(API_BASE, {
+          method: 'POST',
           headers: {
-            'Authorization': `Bearer ${apiKey.trim()}`,
-            'Accept-Language': 'en-US,en'
-          }
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            apiKey: apiKey.trim(),
+            action: 'status',
+            taskId: id
+          })
         })
 
         const data = await response.json()
