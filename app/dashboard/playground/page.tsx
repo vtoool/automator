@@ -148,6 +148,7 @@ export default function PlaygroundPage() {
   const [apiKey, setApiKey] = useState('')
   const [apiKeyExpanded, setApiKeyExpanded] = useState(true)
   const [selectedModel, setSelectedModel] = useState<ModelConfig>(MODELS[0])
+  const [isClient, setIsClient] = useState(false)
   const [prompt, setPrompt] = useState('')
   const [images, setImages] = useState<string[]>([])
   const [style, setStyle] = useState<'general' | 'anime'>('general')
@@ -168,6 +169,7 @@ export default function PlaygroundPage() {
   const pollingRef = useRef<NodeJS.Timeout | null>(null)
 
   useEffect(() => {
+    setIsClient(true)
     const savedKey = localStorage.getItem('zai_api_key')
     if (savedKey) {
       setApiKey(savedKey)
@@ -233,7 +235,7 @@ export default function PlaygroundPage() {
   }
 
   const generateVideo = async () => {
-    if (!apiKey) {
+    if (!apiKey.trim()) {
       setError('Please enter your API key first')
       setApiKeyExpanded(true)
       return
@@ -304,7 +306,7 @@ export default function PlaygroundPage() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${apiKey}`,
+          'Authorization': `Bearer ${apiKey.trim()}`,
           'Accept-Language': 'en-US,en'
         },
         body: JSON.stringify(requestBody)
@@ -312,8 +314,12 @@ export default function PlaygroundPage() {
 
       const data = await response.json()
 
+      if (response.status === 429) {
+        throw new Error('Rate limit exceeded. Please wait a moment and try again.')
+      }
+
       if (!response.ok || data.code) {
-        throw new Error(data.message || 'Failed to submit generation request')
+        throw new Error(data.message || `Request failed (${response.status})`)
       }
 
       setProgressMsg('Video is being generated... (this may take a few minutes)')
@@ -333,7 +339,7 @@ export default function PlaygroundPage() {
       try {
         const response = await fetch(`${API_BASE}/async-result/${id}`, {
           headers: {
-            'Authorization': `Bearer ${apiKey}`,
+            'Authorization': `Bearer ${apiKey.trim()}`,
             'Accept-Language': 'en-US,en'
           }
         })
