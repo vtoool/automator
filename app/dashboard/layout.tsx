@@ -86,7 +86,7 @@ export default function DashboardLayout({
         )}
         
         {/* Main content */}
-        <main className="flex-1 min-h-screen" style={{ pointerEvents: 'auto' }}>
+        <main className="flex-1 min-h-screen z-20 relative">
           {children}
         </main>
       </div>
